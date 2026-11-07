@@ -5,7 +5,7 @@ import { Icon } from './icons';
 import { parseQuestionsCsv, questionsCsv, sampleQuestions } from '../shared/csv';
 import type { PracticeState, Question, QuestionRow, Settings, Stats } from '../shared/model';
 import { spokenText, type SpeechConfig } from '../shared/speech';
-import { announceQuestion } from './speech';
+import { announceQuestion, isNewCorrectResult, playCorrectAnswer } from './speech';
 import './style.css';
 
 type Page = 'practice' | 'questions' | 'favorites' | 'history' | 'settings';
@@ -83,6 +83,8 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
   const audioUrl = useRef('');
   const pendingSpeech = useRef<AbortController | null>(null);
   const autoPlay = useRef(true);
+  const pendingCorrect = useRef('');
+  const [correctSoundError, setCorrectSoundError] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const watchdog = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const introCleanup = useRef<(() => void) | undefined>(undefined);
@@ -98,7 +100,7 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
     if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
     audioUrl.current = '';
   };
-  const update = (data: PracticeState) => { cancel(); releaseAudio(); autoPlay.current = true; setPreparedId(''); setPreparing(false); setSpeechError(''); setState(data); setAnswer(''); setStage('ready'); };
+  const update = (data: PracticeState) => { cancel(); releaseAudio(); autoPlay.current = true; pendingCorrect.current = ''; setCorrectSoundError(false); setPreparedId(''); setPreparing(false); setSpeechError(''); setState(data); setAnswer(''); setStage('ready'); };
   const load = async () => {
     setError('');
     try {
@@ -190,23 +192,40 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
     autoPlay.current = false;
     start();
   }, [state?.attempt?.id, state?.attempt?.answered, speechConfig, preparedId, preparing]);
-  const next = (newRound: boolean) => {
+  const playCorrectSound = () => {
+    cancel(); releaseAudio(); setCorrectSoundError(false);
+    const generation = token.current;
+    audio.current ??= new Audio();
+    playCorrectAnswer(audio.current, () => { if (token.current === generation) setCorrectSoundError(true); });
+  };
+  // Run after the question-audio cleanup caused by the answer state change.
+  useEffect(() => {
+    if (pendingCorrect.current !== state?.attempt?.id || !state.attempt.answered || !state.attempt.correct || state.attempt.skipped) return;
+    pendingCorrect.current = '';
+    playCorrectSound();
+  }, [state?.attempt?.id, state?.attempt?.answered, state?.attempt?.correct]);
+  const unlockAudio = () => {
     cancel();
-    // Unlock the same media element during the tap, before fetching the next question.
-    if (speechConfig?.provider === 'google') {
-      releaseAudio();
-      const silent = Uint8Array.from(atob('UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='), c => c.charCodeAt(0));
-      audioUrl.current = URL.createObjectURL(new Blob([silent], { type: 'audio/wav' }));
-      audio.current ??= new Audio(); audio.current.src = audioUrl.current;
-      void audio.current.play().catch(() => {});
-    }
+    // Unlock during the tap, before fetching a question or an answer result.
+    releaseAudio(); setPreparedId('');
+    const silent = Uint8Array.from(atob('UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='), c => c.charCodeAt(0));
+    audioUrl.current = URL.createObjectURL(new Blob([silent], { type: 'audio/wav' }));
+    audio.current ??= new Audio(); audio.current.src = audioUrl.current;
+    void audio.current.play().catch(() => {});
+  };
+  const next = (newRound: boolean) => {
+    unlockAudio();
     void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound } })); refresh(); });
   };
   const stop = () => { autoPlay.current = false; cancel(); setStage('answering'); setTimeout(() => input.current?.focus(), 0); };
   const a = state?.attempt;
   const answered = Boolean(a?.answered);
   const progress = state ? Math.max(0, state.seen - (a && !a.answered ? 1 : 0)) : 0;
-  const submit = async (skip = false) => run(async () => { cancel(); const result = await api<PracticeState>(`/attempts/${a!.id}/answer`, { method: 'POST', body: { answer, skip } }); setState(result); refresh(); });
+  const receiveResult = (result: PracticeState) => {
+    pendingCorrect.current = isNewCorrectResult(a, result.attempt) ? result.attempt!.id : '';
+    setState(result);
+  };
+  const submit = async (skip = false) => run(async () => { unlockAudio(); const result = await api<PracticeState>(`/attempts/${a!.id}/answer`, { method: 'POST', body: { answer, skip } }); receiveResult(result); refresh(); });
   return <>
     <div className="stats-grid"><Stat label="登録している問題" value={stats?.total} unit="問" icon="book" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /><Stat label="これまでの正解率" value={stats ? stats.answered ? Math.round(stats.correct / stats.answered * 100) : 0 : undefined} unit="%" icon="check" /></div>
     <div className="practice-layout">
@@ -217,10 +236,11 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
           <div className="question-meta"><span>QUESTION {String(state.seen).padStart(2, '0')}</span><span>{a.category || 'クイズ'}</span></div>
           {answered ? <div className="result" aria-live="polite">
             <div className={`result-badge ${a.skipped ? 'skipped' : a.correct ? 'correct' : 'incorrect'}`}><Icon name={a.skipped ? 'arrow' : a.correct ? 'check' : 'close'} size={26} />{a.skipped ? '答えを確認しました' : a.correct ? '正解です！' : '次につなげよう'}{a.overridden && <small>正解扱いに変更済み</small>}</div>
+            {correctSoundError && <p className="notice" role="status">正解音を再生できませんでした。<button className="text-button" onClick={playCorrectSound}>正解音を再生</button></p>}
             <p className="revealed-question">{a.text}</p><div className="answer-reveal"><span className="eyebrow">ANSWER</span><h2>{a.answer}</h2>{!!a.aliases?.length && <p>別解：{a.aliases.join(' ／ ')}</p>}</div>
             {!a.skipped && <p className="your-answer">あなたの答え：<strong>{a.submittedAnswer}</strong></p>}
             {a.note && <p className="question-note">{a.note}</p>}{a.source && <p className="source">出典・メモ：{a.source}</p>}
-            <div className="result-actions"><button className={`button secondary ${a.favorite ? 'is-favorite' : ''}`} disabled={busy} onClick={() => void run(async () => { await api(`/favorites/${a.questionId}`, { method: 'PUT', body: { favorite: !a.favorite } }); setState({ ...state, attempt: { ...a, favorite: !a.favorite } }); refresh(); })}><Icon name="star" fill={a.favorite} />{a.favorite ? 'お気に入り済み' : 'お気に入りに追加'}</button>{!a.correct && !a.skipped && <button className="text-button" disabled={busy} onClick={() => void run(async () => { setState(await api(`/attempts/${a.id}/override`, { method: 'POST', body: {} })); refresh(); })}>正解扱いに変更</button>}</div>
+            <div className="result-actions"><button className={`button secondary ${a.favorite ? 'is-favorite' : ''}`} disabled={busy} onClick={() => void run(async () => { await api(`/favorites/${a.questionId}`, { method: 'PUT', body: { favorite: !a.favorite } }); setState({ ...state, attempt: { ...a, favorite: !a.favorite } }); refresh(); })}><Icon name="star" fill={a.favorite} />{a.favorite ? 'お気に入り済み' : 'お気に入りに追加'}</button>{!a.correct && !a.skipped && <button className="text-button" disabled={busy} onClick={() => void run(async () => { unlockAudio(); receiveResult(await api(`/attempts/${a.id}/override`, { method: 'POST', body: {} })); refresh(); })}>正解扱いに変更</button>}</div>
             {state.completed && <div className="round-complete"><strong>すべての問題を一巡しました。</strong><span>よく頑張りました。次の一巡も、自分のペースで。</span></div>}
             <button className="button primary wide" disabled={busy} onClick={() => next(state.completed)}>{busy ? '準備しています…' : state.completed ? '次の一巡を始める' : '次の問題へ'}<Icon name="arrow" /></button>
           </div> : <>
