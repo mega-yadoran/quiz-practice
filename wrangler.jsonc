@@ -1,0 +1,28 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "q-practice",
+  "account_id": "efa2e719f5c34b8c0a12fa225da40c2c",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-11-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ENVIRONMENT": "production",
+    "OWNER_EMAIL": "yado@mega-yadoran.jp",
+    "ACCESS_TEAM_DOMAIN": "blue-heart-b11b.cloudflareaccess.com",
+    "ACCESS_AUD": "5674668232bc4b2fe96aba821825ce0a0b235c18482cc211785db7920fdafd63"
+  },
+  "d1_databases": [{
+    "binding": "DB",
+    "database_name": "q-practice",
+    "database_id": "c9357dee-fc09-4714-8676-6078674d6fe2",
+    "migrations_dir": "migrations"
+  }]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "Quiz Practice",
+  "type": "self_hosted",
+  "domain": "q-practice.yado-quiz.workers.dev",
+  "session_duration": "168h",
+  "allowed_idps": ["69d1f93b-6d75-4301-84ae-2fba96aed539"],
+  "app_launcher_visible": false,
+  "http_only_cookie_attribute": true,
+  "same_site_cookie_attribute": "lax",
+  "policies": [
+    {
+      "name": "Owner only",
+      "decision": "allow",
+      "precedence": 1,
+      "include": [{ "email": { "email": "yado@mega-yadoran.jp" } }]
+    }
+  ]
+}
