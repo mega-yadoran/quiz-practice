@@ -34,10 +34,14 @@ try {
   }
   assert.ok(ready, logs);
   assert.equal((await request('/stats')).total, 0);
-  const questions = Array.from({ length: 3 }, (_, i) => ({ id: `test-${i}`, text: `テスト問題${i}`, answer: 'ABC', aliases: ['えーびーしー'], category: 'テスト', note: '最初の解説' }));
+  const questions = Array.from({ length: 3 }, (_, i) => ({ id: `test-${i}`, text: `テスト問題${i}`, answer: 'ABC', aliases: ['えーびーしー'], collection: '統合テスト本', majorCategory: '科学', minorCategory: '単位', retryAliases: ['もう少し'], category: 'テスト', note: '最初の解説' }));
   assert.deepEqual(await request('/import/preview', 'POST', questions), { existing: [], added: 3, updated: 0 });
   await request('/import', 'POST', questions);
   assert.equal((await request('/questions')).total, 3);
+  await request('/collections', 'POST', { name: '空の問題集' });
+  assert.equal((await request('/collections')).collections.find(c => c.name === '統合テスト本').total, 3);
+  assert.equal((await request('/questions?collection=' + encodeURIComponent('空の問題集'))).total, 0);
+  assert.equal((await request('/questions?search=' + encodeURIComponent('単位'))).total, 3);
   const seen = new Set();
   let current;
   for (let i = 0; i < 3; i++) {
@@ -50,10 +54,21 @@ try {
     assert.equal((await request('/practice')).attempt.id, current.attempt.id, '再読込で進み具合を維持');
     if (i === 0) {
       await request(`/favorites/${current.attempt.questionId}`, 'PUT', { favorite: true });
-      const changed = { ...questions.find(q => q.id === current.attempt.questionId), answer: 'UPDATED', note: '更新後' };
+      const changed = { ...questions.find(q => q.id === current.attempt.questionId), answer: 'UPDATED', retryAliases: ['更新後の△'], collection: '変更後の本', majorCategory: '変更後', note: '更新後' };
       await request('/import', 'POST', [changed]);
       assert.equal((await request('/questions?favorite=1')).questions[0].answer, 'UPDATED');
+      current = await request(`/attempts/${current.attempt.id}/answer`, 'POST', { answer: 'もう少し' });
+      assert.equal(current.attempt.answered, false);
+      assert.equal(current.attempt.retryRequested, true);
+      assert.equal(current.attempt.answer, undefined);
+      assert.equal(current.attempt.retryAliases, undefined);
+      assert.equal(current.attempt.collection, '統合テスト本');
+      assert.equal((await request('/stats')).answered, 0);
+      assert.equal((await request('/history')).total, 0);
+      assert.equal((await request('/practice')).attempt.retryRequested, true);
+      assert.equal((await request('/practice/next', 'POST', {})).attempt.id, current.attempt.id);
       current = await request(`/attempts/${current.attempt.id}/answer`, 'POST', { answer: '　ａｂｃ　' });
+      assert.equal(current.attempt.retryRequested, false);
       assert.equal(current.attempt.correct, true, '出題時点の正解で判定');
       assert.equal(current.attempt.note, '最初の解説', '出題時点の解説を保持');
       assert.equal(current.attempt.favorite, true, '更新後もお気に入り維持');
@@ -87,10 +102,66 @@ try {
   assert.deepEqual(await request('/settings'), { rate: 1.3, showQuestion: true });
   const exported = await request('/export');
   assert.equal(exported.questions.length, 3);
+  assert.ok(exported.collections.some(c => c.name === '空の問題集'));
+  assert.deepEqual(exported.questions[0].retryAliases, exported.questions[0].answer === 'UPDATED' ? ['更新後の△'] : ['もう少し']);
   assert.equal(exported.favorites.length, 1);
   assert.equal(exported.attempts.length, 4);
   const duplicate = await fetch(base + '/api/questions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(questions[0]) });
   assert.equal(duplicate.status, 409);
+  // Collection management preserves IDs and snapshots, and cancels deleted pending questions.
+  const pending = next.attempt;
+  const target = exported.questions.find(q => q.id === pending.questionId);
+  const oldName = target.collection;
+  const newName = '名前変更済み / 問題集';
+  const members = exported.questions.filter(q => q.collection === oldName);
+  await request('/collections', 'PUT', { name: oldName, newName });
+  const renamed = await request('/collections/export?name=' + encodeURIComponent(newName));
+  assert.deepEqual(renamed.questions.map(q => q.id).sort(), members.map(q => q.id).sort());
+  assert.equal((await request('/practice')).attempt.collection, pending.collection, '出題時の問題集名を保持');
+  assert.equal((await request('/collections')).collections.some(c => c.name === oldName), false);
+  async function rejectedCollection(method, body, status) {
+    const r = await fetch(base + '/api/collections', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(r.status, status);
+  }
+  await rejectedCollection('PUT', { name: newName, newName: '空の問題集' }, 409);
+  await rejectedCollection('PUT', { name: newName, newName: '  ' }, 400);
+  await rejectedCollection('DELETE', { name: newName, confirmation: '違う名前', total: members.length }, 400);
+  await rejectedCollection('DELETE', { name: '', confirmation: '', total: 0 }, 400);
+  await rejectedCollection('DELETE', { name: newName, confirmation: newName, total: members.length + 1 }, 409);
+  assert.equal((await request('/stats')).total, 3);
+  const beforeDelete = await request('/stats');
+  const historyBeforeDelete = await request('/history');
+  await request('/favorites/' + pending.questionId, 'PUT', { favorite: true });
+  await request('/collections', 'DELETE', { name: newName, confirmation: newName, total: members.length });
+  assert.equal((await request('/questions?collection=' + encodeURIComponent(newName))).total, 0);
+  assert.equal((await request('/collections')).collections.some(c => c.name === newName), false);
+  assert.deepEqual(await request('/history'), historyBeforeDelete, '削除後も回答済み履歴を保持し、中止した出題を履歴に加えない');
+  const afterDelete = await request('/stats');
+  assert.equal(afterDelete.total, 3 - members.length);
+  for (const key of ['answered', 'correct', 'skipped', 'today']) assert.equal(afterDelete[key], beforeDelete[key], key);
+  const backup = await request('/export');
+  assert.equal(backup.version, 3);
+  assert.equal(backup.deletedQuestions.length, members.length);
+  assert.equal(backup.favorites.some(f => members.some(q => q.id === f.question_id)), false);
+  assert.ok(backup.attempts.find(a => a.id === pending.id).cancelled);
+  const stale = await fetch(base + '/api/attempts/' + pending.id + '/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: 'ABC' }) });
+  assert.equal(stale.status, 409);
+  const resumed = await request('/practice/next', 'POST', { newRound: true });
+  assert.ok(!members.some(q => q.id === resumed.attempt?.questionId));
+  assert.ok(resumed.seen <= resumed.total);
+  await request('/collections', 'DELETE', { name: '空の問題集', confirmation: '空の問題集', total: 0 });
+  assert.equal((await request('/collections')).collections.some(c => c.name === '空の問題集'), false);
+  // Reimport the saved CSV-equivalent data under the same IDs; history still belongs to those IDs.
+  await request('/import', 'POST', renamed.questions);
+  assert.equal((await request('/stats')).total, 3);
+  assert.equal((await request('/export')).deletedQuestions.length, 0);
+  assert.deepEqual((await request('/collections/export?name=' + encodeURIComponent(newName))).questions.map(q => q.id).sort(), members.map(q => q.id).sort());
+  // Deleting every remaining collection leaves an empty, resumable practice screen.
+  for (const c of (await request('/collections')).collections.filter(c => c.name)) {
+    await request('/collections', 'DELETE', { name: c.name, confirmation: c.name, total: c.total });
+  }
+  assert.equal((await request('/practice/next', 'POST', { newRound: true })).total, 0);
+  assert.equal((await request('/history')).total, historyBeforeDelete.total);
   console.log('PASS: D1実機互換テスト — 取り込み・更新・出題の同時操作・一巡・再開・判定・お気に入り・履歴・設定・書き出し');
 } catch (error) {
   console.error(logs);
