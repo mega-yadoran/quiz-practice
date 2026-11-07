@@ -1,9 +1,11 @@
 # 初版の確定仕様
 
+2026-11-07にプロトタイプ完成。ユーザーから動作確認済みの報告あり。以下の「次の候補」は追加実装の確定依頼ではない。
+
 - 利用者1名。所有者メールアドレス `yado@mega-yadoran.jp`。
 - iPhone 13 mini / iOS 27.0.1のSafari、およびPCのChrome。オンラインで利用。
 - React + Vite + TypeScript、Hono、Cloudflare Workers、D1、Access。
-- 公開先の第一希望は `q-practice.mega-yadoran.jp`。
+- 現在の公開先は https://q-practice.yado-quiz.workers.dev 。希望の `q-practice.mega-yadoran.jp` は対象アカウントに親ドメインのゾーンがないため保留。
 - 短い単語・語句で回答する問題。選択式・長文の意味判定は対象外。
 - 出題範囲は全問題のみ。お気に入り・分野での出題絞り込みは今後の拡張。
 - 一巡内で重複なし。解答中の問題と進み具合をD1に保存し、端末を変えても再開可能。

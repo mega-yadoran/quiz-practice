@@ -2,6 +2,18 @@
 
 自分用のクイズ練習帳。iPhone 13 miniのSafariとPCのChromeを想定した、React + TypeScript / Hono / Cloudflare Workers / D1のアプリです。
 
+2026-11-07時点でプロトタイプ完成・ユーザーの動作確認済み。CI/CDによる本番反映も確認済みです。
+
+## ドキュメント案内
+
+| 資料 | 内容 |
+| --- | --- |
+| [仕様](docs/SPEC.md) | 合意した機能・操作、今後の候補 |
+| [実装メモ](docs/ARCHITECTURE.md) | 構成・データモデル・変更時に維持する動作 |
+| [CI/CD](docs/CI-CD.md) | 自動テスト・マイグレーション・公開・復旧 |
+| [確認結果](docs/VERIFICATION.md) | 動作確認の範囲と実行記録 |
+| [AGENTS.md](AGENTS.md) | 別チャット・エージェント向けの読む順番と作業上の注意 |
+
 ## できること
 
 - 問題の手入力・編集・検索、UTF-8 CSVの一括取り込み（1回500問）
@@ -71,7 +83,7 @@ q001,日本で最も高い山は何でしょう？,富士山,ふじさん|フジ
 
 公開URL: https://q-practice.yado-quiz.workers.dev
 
-AccessアプリID: `79d6d7cc-02d3-48f9-824c-bd470de6885d`。メールのワンタイムPINで所有者だけログイン可能。セッション期間は7日です。以下の初回設定はすでに反映済みです。通常の更新では `npm run deploy` を実行します。
+AccessアプリID: `79d6d7cc-02d3-48f9-824c-bd470de6885d`。メールのワンタイムPINで所有者だけログイン可能。セッション期間は7日です。初回設定は反映済みです。通常の更新は `main` へのpushに伴うCI/CDで反映します。以下の手動コマンドは初期構築・復旧時の参照用です。
 
 希望ドメイン `q-practice.mega-yadoran.jp` は、現在のCloudflareアカウントに親ドメインのゾーンがないため保留です。切り替える場合の手順:
 

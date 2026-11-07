@@ -2,6 +2,8 @@
 
 設定ファイル: `.github/workflows/ci-cd.yml`
 
+2026-11-07時点で設定・APIトークン登録とも完了。[初回実行のattempt 2](https://github.com/mega-yadoran/quiz-practice/actions/runs/42371017355/attempts/2) で、テスト・マイグレーション・本番デプロイ・公開先の認証チェックまで成功を確認しています。通常運用でトークンの再登録は不要です。以下の初回設定は再構築・トークン更新時の参照用です。
+
 ## いつ何が動くか
 
 | 操作 | 自動実行 |
