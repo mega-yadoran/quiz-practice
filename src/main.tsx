@@ -4,6 +4,8 @@ import { api, download } from './api';
 import { Icon } from './icons';
 import { parseQuestionsCsv, questionsCsv, sampleQuestions } from '../shared/csv';
 import type { PracticeState, Question, QuestionRow, Settings, Stats } from '../shared/model';
+import { spokenText, type SpeechConfig } from '../shared/speech';
+import { announceQuestion } from './speech';
 import './style.css';
 
 type Page = 'practice' | 'questions' | 'favorites' | 'history' | 'settings';
@@ -74,12 +76,29 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [speechError, setSpeechError] = useState('');
+  const [speechConfig, setSpeechConfig] = useState<SpeechConfig | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [preparedId, setPreparedId] = useState('');
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const audioUrl = useRef('');
+  const pendingSpeech = useRef<AbortController | null>(null);
+  const autoPlay = useRef(true);
   const input = useRef<HTMLInputElement>(null);
   const watchdog = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const introCleanup = useRef<(() => void) | undefined>(undefined);
   const utterance = useRef<SpeechSynthesisUtterance | null>(null);
   const token = useRef(0);
-  const cancel = useCallback(() => { token.current++; clearTimeout(watchdog.current); window.speechSynthesis?.cancel(); utterance.current = null; }, []);
-  const update = (data: PracticeState) => { setState(data); setAnswer(''); setStage('ready'); };
+  const cancel = useCallback(() => {
+    token.current++; clearTimeout(watchdog.current); introCleanup.current?.(); introCleanup.current = undefined; window.speechSynthesis?.cancel(); utterance.current = null;
+    pendingSpeech.current?.abort(); pendingSpeech.current = null;
+    if (audio.current) { audio.current.pause(); audio.current.currentTime = 0; }
+  }, []);
+  const releaseAudio = () => {
+    if (audio.current) { audio.current.onended = null; audio.current.onerror = null; audio.current.removeAttribute('src'); audio.current.load(); }
+    if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
+    audioUrl.current = '';
+  };
+  const update = (data: PracticeState) => { cancel(); releaseAudio(); autoPlay.current = true; setPreparedId(''); setPreparing(false); setSpeechError(''); setState(data); setAnswer(''); setStage('ready'); };
   const load = async () => {
     setError('');
     try {
@@ -88,26 +107,102 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
       update(data);
     } catch (e) { setError((e as Error).message); }
   };
-  useEffect(() => { void load(); return cancel; }, [cancel]);
+  useEffect(() => {
+    void load();
+    void api<SpeechConfig>('/speech/config').then(setSpeechConfig).catch(e => setSpeechError((e as Error).message));
+    return () => { cancel(); releaseAudio(); };
+  }, [cancel]);
   const run = async (fn: () => Promise<void>) => { setBusy(true); setError(''); try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const start = () => {
-    if (!state?.attempt) return;
+    if (!state?.attempt || preparing) return;
+    const attempt = state.attempt;
     setSpeechError(''); cancel();
-    if (!('speechSynthesis' in window)) { setSpeechError('このブラウザでは読み上げを利用できません。「文字を見て回答」から練習できます。'); return; }
-    const generation = token.current;
-    const u = new SpeechSynthesisUtterance(state.attempt.reading || state.attempt.text);
-    u.lang = 'ja-JP'; u.rate = settings.rate;
-    const voice = speechSynthesis.getVoices().find(v => v.lang === 'ja-JP');
-    if (voice) u.voice = voice;
-    utterance.current = u;
-    u.onstart = () => { if (token.current === generation) clearTimeout(watchdog.current); };
-    u.onend = () => { if (token.current === generation) { clearTimeout(watchdog.current); setStage('answering'); } };
-    u.onerror = () => { if (token.current === generation) { clearTimeout(watchdog.current); setStage('ready'); setSpeechError('読み上げを開始できませんでした。もう一度ボタンを押してください。'); } };
+    if (!speechConfig) { setSpeechError('音声設定を取得できません。ページを再読み込みしてください。'); return; }
+    if (speechConfig.provider === 'google' && (preparedId !== state.attempt.id || !audio.current)) { setStage('ready'); autoPlay.current = true; void prepareSpeech(); return; }
+    const sequence = token.current;
+    const readBody = () => {
+      if (token.current !== sequence) return;
+      if (speechConfig.provider === 'google') {
+        if (preparedId !== attempt.id || !audio.current) { setStage('ready'); autoPlay.current = true; void prepareSpeech(); return; }
+        const generation = token.current;
+        const player = audio.current;
+        player.src = audioUrl.current;
+        player.playbackRate = settings.rate;
+        player.onended = () => { if (token.current === generation) setStage('answering'); };
+        player.onerror = () => { if (token.current === generation) { setStage('ready'); setSpeechError('音声を再生できませんでした。ページを再読み込みしてお試しください。'); } };
+        setStage('reading');
+        void player.play().catch(() => { if (token.current === generation) { setStage('ready'); setSpeechError('自動再生できませんでした。「音声を再生」を押してください。'); } });
+        return;
+      }
+      if (!('speechSynthesis' in window)) { setStage('ready'); setSpeechError('このブラウザでは読み上げを利用できません。「文字を見て回答」から練習できます。'); return; }
+      const generation = token.current;
+      const text = spokenText(attempt.reading || attempt.text);
+      if (!text) { setStage('ready'); setSpeechError('括弧内を除くと読み上げ文が空になります。問題文を確認してください。'); return; }
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ja-JP'; u.rate = settings.rate;
+      const voice = speechSynthesis.getVoices().find(v => v.lang === 'ja-JP');
+      if (voice) u.voice = voice;
+      utterance.current = u;
+      u.onstart = () => { if (token.current === generation) clearTimeout(watchdog.current); };
+      u.onend = () => { if (token.current === generation) { clearTimeout(watchdog.current); setStage('answering'); } };
+      u.onerror = () => { if (token.current === generation) { clearTimeout(watchdog.current); setStage('ready'); setSpeechError('読み上げを開始できませんでした。もう一度ボタンを押してください。'); } };
+      setStage('reading');
+      watchdog.current = setTimeout(() => { if (token.current === generation) { cancel(); setStage('ready'); setSpeechError('音声を開始できませんでした。音量を確認し、もう一度お試しください。'); } }, 4000);
+      speechSynthesis.speak(u);
+    };
+    audio.current ??= new Audio();
     setStage('reading');
-    watchdog.current = setTimeout(() => { if (token.current === generation) { cancel(); setStage('ready'); setSpeechError('音声を開始できませんでした。音量を確認し、もう一度お試しください。'); } }, 4000);
-    speechSynthesis.speak(u);
+    introCleanup.current = announceQuestion(audio.current, readBody, () => {
+      if (token.current === sequence) { cancel(); setStage('ready'); setSpeechError('「問題」の音声を開始できませんでした。「音声を再生」を押してお試しください。'); }
+    });
   };
-  const stop = () => { cancel(); setStage('answering'); setTimeout(() => input.current?.focus(), 0); };
+  const prepareSpeech = async () => {
+    if (!state?.attempt || preparing) return;
+    cancel(); releaseAudio(); setPreparedId(''); setSpeechError(''); setPreparing(true);
+    const generation = token.current;
+    const controller = new AbortController(); pendingSpeech.current = controller;
+    const timeout = setTimeout(() => controller.abort(), 35000);
+    try {
+      const response = await fetch('/api/speech', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ attemptId: state.attempt.id }), signal: controller.signal });
+      if (!response.ok || !response.headers.get('Content-Type')?.includes('audio/mpeg')) {
+        const data = response.headers.get('Content-Type')?.includes('application/json') ? await response.json() as { error?: string } : null;
+        throw new Error(data?.error || '音声を取得できません。ログインとサーバーの設定を確認してください。');
+      }
+      const blob = await response.blob();
+      if (generation !== token.current) return;
+      audioUrl.current = URL.createObjectURL(blob);
+      audio.current ??= new Audio();
+      audio.current.src = audioUrl.current;
+      audio.current.preload = 'auto';
+      setPreparedId(state.attempt.id);
+    } catch (e) {
+      if (generation === token.current) setSpeechError(controller.signal.aborted ? '音声の準備がタイムアウトしました。もう一度お試しください。' : (e as Error).message);
+    } finally { clearTimeout(timeout); if (generation === token.current) { setPreparing(false); pendingSpeech.current = null; } }
+  };
+  useEffect(() => {
+    if (!state?.attempt || state.attempt.answered || speechConfig?.provider !== 'google') return;
+    void prepareSpeech();
+    return () => { cancel(); releaseAudio(); };
+  }, [state?.attempt?.id, state?.attempt?.answered, speechConfig?.provider, speechConfig?.voice]);
+  useEffect(() => {
+    if (!state?.attempt || state.attempt.answered || !speechConfig || !autoPlay.current || preparing) return;
+    if (speechConfig.provider === 'google' && preparedId !== state.attempt.id) return;
+    autoPlay.current = false;
+    start();
+  }, [state?.attempt?.id, state?.attempt?.answered, speechConfig, preparedId, preparing]);
+  const next = (newRound: boolean) => {
+    cancel();
+    // Unlock the same media element during the tap, before fetching the next question.
+    if (speechConfig?.provider === 'google') {
+      releaseAudio();
+      const silent = Uint8Array.from(atob('UklGRiYAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQIAAAAAAA=='), c => c.charCodeAt(0));
+      audioUrl.current = URL.createObjectURL(new Blob([silent], { type: 'audio/wav' }));
+      audio.current ??= new Audio(); audio.current.src = audioUrl.current;
+      void audio.current.play().catch(() => {});
+    }
+    void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound } })); refresh(); });
+  };
+  const stop = () => { autoPlay.current = false; cancel(); setStage('answering'); setTimeout(() => input.current?.focus(), 0); };
   const a = state?.attempt;
   const answered = Boolean(a?.answered);
   const progress = state ? Math.max(0, state.seen - (a && !a.answered ? 1 : 0)) : 0;
@@ -118,7 +213,7 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
       <section className="card practice-card" aria-label="クイズの練習">
         <div className="card-top"><span className="section-label"><span className="status-dot" />全問題から出題</span><span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span></div>
         {error && <ErrorBox error={error} retry={() => void load()} />}
-        {!state ? !error && <Loading /> : !state.total ? <Empty title="最初の問題を登録しよう"><p>CSVの取り込みや手入力で、<br />あなただけの問題集を作れます。</p><button className="button primary" onClick={onQuestions}><Icon name="plus" />問題を登録する</button></Empty> : !a ? <Empty title="一巡おつかれさまでした"><button className="button primary" disabled={busy} onClick={() => void run(async () => update(await api('/practice/next', { method: 'POST', body: { newRound: true } })))}>次の一巡を始める</button></Empty> : <>
+        {!state ? !error && <Loading /> : !state.total ? <Empty title="最初の問題を登録しよう"><p>CSVの取り込みや手入力で、<br />あなただけの問題集を作れます。</p><button className="button primary" onClick={onQuestions}><Icon name="plus" />問題を登録する</button></Empty> : !a ? <Empty title="一巡おつかれさまでした"><button className="button primary" disabled={busy} onClick={() => next(true)}>次の一巡を始める</button></Empty> : <>
           <div className="question-meta"><span>QUESTION {String(state.seen).padStart(2, '0')}</span><span>{a.category || 'クイズ'}</span></div>
           {answered ? <div className="result" aria-live="polite">
             <div className={`result-badge ${a.skipped ? 'skipped' : a.correct ? 'correct' : 'incorrect'}`}><Icon name={a.skipped ? 'arrow' : a.correct ? 'check' : 'close'} size={26} />{a.skipped ? '答えを確認しました' : a.correct ? '正解です！' : '次につなげよう'}{a.overridden && <small>正解扱いに変更済み</small>}</div>
@@ -127,17 +222,21 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
             {a.note && <p className="question-note">{a.note}</p>}{a.source && <p className="source">出典・メモ：{a.source}</p>}
             <div className="result-actions"><button className={`button secondary ${a.favorite ? 'is-favorite' : ''}`} disabled={busy} onClick={() => void run(async () => { await api(`/favorites/${a.questionId}`, { method: 'PUT', body: { favorite: !a.favorite } }); setState({ ...state, attempt: { ...a, favorite: !a.favorite } }); refresh(); })}><Icon name="star" fill={a.favorite} />{a.favorite ? 'お気に入り済み' : 'お気に入りに追加'}</button>{!a.correct && !a.skipped && <button className="text-button" disabled={busy} onClick={() => void run(async () => { setState(await api(`/attempts/${a.id}/override`, { method: 'POST', body: {} })); refresh(); })}>正解扱いに変更</button>}</div>
             {state.completed && <div className="round-complete"><strong>すべての問題を一巡しました。</strong><span>よく頑張りました。次の一巡も、自分のペースで。</span></div>}
-            <button className="button primary wide" disabled={busy} onClick={() => void run(async () => { cancel(); update(await api('/practice/next', { method: 'POST', body: { newRound: state.completed } })); refresh(); })}>{busy ? '準備しています…' : state.completed ? '次の一巡を始める' : '次の問題へ'}<Icon name="arrow" /></button>
+            <button className="button primary wide" disabled={busy} onClick={() => next(state.completed)}>{busy ? '準備しています…' : state.completed ? '次の一巡を始める' : '次の問題へ'}<Icon name="arrow" /></button>
           </div> : <>
             <div className={`listening-area ${stage === 'reading' ? 'is-reading' : ''}`}>
               <div className="sound-orbit"><div className="sound-disc">{stage === 'reading' ? <div className="wave" aria-hidden="true">{[1, 2, 3, 4, 5].map(n => <i key={n} />)}</div> : <Icon name="headphones" size={40} />}</div></div>
-              <h2>{stage === 'reading' ? '問題を読み上げています' : stage === 'answering' ? '答えを入力しましょう' : '耳をすまして、準備はいい？'}</h2><p>{stage === 'reading' ? 'わかったところで「解答する」を押してください。' : stage === 'answering' ? 'キーボードのマイクを使えば、声でも入力できます。' : 'ボタンを押すと、問題の読み上げが始まります。'}</p>
+              <h2>{stage === 'reading' ? '問題を読み上げています' : stage === 'answering' ? '答えを入力しましょう' : speechError ? '音声を確認してください' : '問題の音声を準備しています'}</h2><p>{stage === 'reading' ? 'わかったところで「解答する」を押してください。' : stage === 'answering' ? 'キーボードのマイクを使えば、声でも入力できます。' : '準備ができると、自動で読み上げが始まります。'}</p>
               {(settings.showQuestion || stage === 'answering' && speechError === 'text') && <p className="visible-question">{a.text}</p>}
             </div>
             {speechError && speechError !== 'text' && <p className="notice" role="status">{speechError}</p>}
-            {stage === 'ready' && <><button className="button primary start-button" disabled={busy} onClick={start}><Icon name="play" size={22} />読み上げを始める</button><button className="text-button text-mode" onClick={() => { setSpeechError('text'); setStage('answering'); setTimeout(() => input.current?.focus(), 0); }}>文字を見て回答する</button></>}
-            {stage === 'reading' && <button className="button stop-button" onClick={stop}><Icon name="stop" size={23} />解答する<span>読み上げを停止</span></button>}
-            {stage === 'answering' && <form className="answer-form" onSubmit={e => { e.preventDefault(); void submit(); }}><label htmlFor="answer">あなたの答え</label><div className="answer-input-row"><input ref={input} id="answer" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="答えを入力" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={500} enterKeyHint="done" disabled={busy} /><button className="button primary" type="submit" disabled={busy || !answer.trim()}>判定する<Icon name="arrow" size={18} /></button></div><div className="answer-options"><button className="text-button" type="button" disabled={busy} onClick={start}><Icon name="volume" size={16} />もう一度聴く</button><button className="text-button" type="button" disabled={busy} onClick={() => void submit(true)}>わからない・正解を見る</button></div></form>}
+            {stage === 'ready' && <>
+              {preparing && <p className="audio-loading" role="status"><span className="spinner" />音声を読み込んでいます…</p>}
+              {speechError && !preparing && <button className="button primary start-button" disabled={busy || !speechConfig} onClick={speechConfig?.provider === 'google' && preparedId !== a.id ? () => { autoPlay.current = true; void prepareSpeech(); } : start}><Icon name="play" size={22} />{speechConfig?.provider === 'google' && preparedId !== a.id ? '音声の準備を再試行' : '音声を再生'}</button>}
+              <button className="text-button text-mode" onClick={() => { autoPlay.current = false; cancel(); setPreparing(false); setSpeechError('text'); setStage('answering'); setTimeout(() => input.current?.focus(), 0); }}>文字を見て回答する</button>
+            </>}
+            {stage === 'reading' && <div className="buzzer-area"><button className="buzzer-button" onClick={stop} aria-label="解答する：読み上げを停止"><span className="buzzer-cap"><Icon name="stop" size={25} /><strong>解答する</strong><small>早押し！</small></span></button><p>押すと読み上げが止まります</p></div>}
+            {stage === 'answering' && <form className="answer-form" onSubmit={e => { e.preventDefault(); void submit(); }}><label htmlFor="answer">あなたの答え</label><div className="answer-input-row"><input ref={input} id="answer" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="答えを入力" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={500} enterKeyHint="done" disabled={busy} /><button className="button primary" type="submit" disabled={busy || !answer.trim()}>判定する<Icon name="arrow" size={18} /></button></div><div className="answer-options"><button className="text-button" type="button" disabled={busy || preparing} onClick={start}><Icon name="volume" size={16} />もう一度聴く</button><button className="text-button" type="button" disabled={busy} onClick={() => void submit(true)}>わからない・正解を見る</button></div></form>}
           </>}
           <div className="round-progress"><div><span>今回の進み具合</span><strong>{progress}<span> / {state.total} 問</span></strong></div><progress value={progress} max={state.total || 1} aria-label="今回の進み具合" /><small>一巡するまで、同じ問題は出題されません。</small></div>
         </>}

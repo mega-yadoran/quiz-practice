@@ -15,6 +15,8 @@
   },
   "vars": {
     "ENVIRONMENT": "production",
+    "TTS_PROVIDER": "google",
+    "GOOGLE_TTS_VOICE": "ja-JP-Standard-D",
     "OWNER_EMAIL": "yado@mega-yadoran.jp",
     "ACCESS_TEAM_DOMAIN": "blue-heart-b11b.cloudflareaccess.com",
     "ACCESS_AUD": "5674668232bc4b2fe96aba821825ce0a0b235c18482cc211785db7920fdafd63"

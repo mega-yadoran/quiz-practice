@@ -1,2 +1,5 @@
 ENVIRONMENT=local
 OWNER_EMAIL=yado@mega-yadoran.jp
+TTS_PROVIDER=google
+GOOGLE_TTS_VOICE=ja-JP-Standard-D
+GOOGLE_TTS_API_KEY=

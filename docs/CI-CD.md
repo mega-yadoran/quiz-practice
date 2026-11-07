@@ -37,6 +37,14 @@ Cloudflareの専用APIトークンを、GitHubの暗号化されたActions secre
 
 `production` Environmentに承認者を追加すると手動承認待ちになります。mainへのpushで自動反映したい場合、必須承認者は設定しません。
 
+## Google音声の公開準備
+
+`wrangler.jsonc` は `TTS_PROVIDER=google`、`GOOGLE_TTS_VOICE=ja-JP-Standard-D` を設定済みです。mainへのpush前に、[Cloudflareダッシュボード](https://dash.cloudflare.com/)の Workers & Pages → `q-practice` → Settings → Variables and Secretsで、タイプを **Secret**、名前を `GOOGLE_TTS_API_KEY` としてGoogle CloudのAPIキーを登録・保存します。ローカルの `.dev.vars` は本番へ送られません。キーをGitHubのコードや通常の環境変数へ記入しないでください。
+
+CLIで登録する場合は `npx wrangler secret put GOOGLE_TTS_API_KEY --config wrangler.jsonc` を使い、対話入力します。通常のデプロイで既存シークレットは維持されます。登録後は通常のmainへのpushでCI/CDを実行し、Actions成功とログイン後の実機で、告知「問題」→0.3秒→本文、自動再生・停止を確認します。固定の告知MP3はリポジトリに含まれ、再生成は不要です。
+
+この音声変更はDBマイグレーションを追加しません。並行作業のマイグレーションや問題データの取り込みは、その作業のコミットと公開範囲に合わせて扱います。
+
 ## マイグレーションの運用
 
 - 新しい変更は `migrations/0002_説明.sql` などの新規ファイルとして追加します。実行済みSQLは編集しません。

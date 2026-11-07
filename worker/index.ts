@@ -3,6 +3,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { z } from 'zod';
 import { isCorrect, questionSchema, type PracticeState, type Question } from '../shared/model';
+import { speechRequestSchema } from '../shared/speech';
+import { SpeechError, synthesize } from './speech';
 
 export interface Bindings {
   DB: D1Database;
@@ -11,6 +13,9 @@ export interface Bindings {
   OWNER_EMAIL: string;
   ACCESS_TEAM_DOMAIN: string;
   ACCESS_AUD: string;
+  TTS_PROVIDER?: string;
+  GOOGLE_TTS_API_KEY?: string;
+  GOOGLE_TTS_VOICE?: string;
 }
 type Env = { Bindings: Bindings; Variables: { email: string } };
 type DbQuestion = Omit<Question, 'aliases'> & { aliases: string; favorite: number };
@@ -27,7 +32,7 @@ app.use('*', async (c, next) => {
   c.header('X-Content-Type-Options', 'nosniff');
   c.header('Referrer-Policy', 'same-origin');
   c.header('Cache-Control', 'no-store');
-  c.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  c.header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
   const hostname = new URL(c.req.url).hostname;
   const local = c.env.ENVIRONMENT === 'local' && ['localhost', '127.0.0.1', '[::1]'].includes(hostname);
   if (local) {
@@ -62,6 +67,25 @@ app.onError((err, c) => {
   return c.json({ error: '処理に失敗しました。しばらくしてから再度お試しください。' }, 500);
 });
 app.get('/api/me', c => c.json({ email: c.get('email'), local: c.env.ENVIRONMENT === 'local' }));
+
+app.get('/api/speech/config', c => c.json({
+  provider: c.env.TTS_PROVIDER === 'google' ? 'google' : 'browser',
+  configured: Boolean(c.env.GOOGLE_TTS_API_KEY),
+  voice: c.env.GOOGLE_TTS_VOICE || 'ja-JP-Standard-D',
+}));
+app.post('/api/speech', async c => {
+  if (c.env.TTS_PROVIDER !== 'google') return c.json({ error: 'Google音声は有効になっていません。' }, 503);
+  const { attemptId } = speechRequestSchema.parse(await c.req.json());
+  const attempt = await c.env.DB.prepare('SELECT question_text,reading FROM attempts WHERE id=?').bind(attemptId).first<{ question_text: string; reading: string }>();
+  if (!attempt) return c.json({ error: '出題が見つかりません。' }, 404);
+  try {
+    const audio = await synthesize(attempt.reading || attempt.question_text, c.env.GOOGLE_TTS_API_KEY || '', c.env.GOOGLE_TTS_VOICE || 'ja-JP-Standard-D');
+    return new Response(audio, { headers: { ...Object.fromEntries(c.res.headers), 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' } });
+  } catch (error) {
+    if (error instanceof SpeechError) return c.json({ error: error.message }, error.status);
+    throw error;
+  }
+});
 
 function decodeQuestion(row: DbQuestion) { return { ...row, aliases: JSON.parse(row.aliases), favorite: Boolean(row.favorite) }; }
 function upsertQuestion(db: D1Database, q: Question) {

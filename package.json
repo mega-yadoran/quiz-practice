@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "test:integration": "node scripts/integration.mjs",
+    "speech:intro": "node scripts/generate-speech-intro.mjs",
     "db:local": "wrangler d1 migrations apply q-practice --local --config wrangler.local.jsonc",
     "db:remote": "wrangler d1 migrations apply q-practice --remote",
     "deploy": "npm run build && wrangler deploy",

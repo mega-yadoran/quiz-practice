@@ -10,7 +10,7 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": true
   },
-  "vars": { "ENVIRONMENT": "local", "OWNER_EMAIL": "yado@mega-yadoran.jp", "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "" },
+  "vars": { "ENVIRONMENT": "local", "OWNER_EMAIL": "yado@mega-yadoran.jp", "ACCESS_TEAM_DOMAIN": "", "ACCESS_AUD": "", "TTS_PROVIDER": "google", "GOOGLE_TTS_VOICE": "ja-JP-Standard-D" },
   "d1_databases": [{
     "binding": "DB",
     "database_name": "q-practice",
