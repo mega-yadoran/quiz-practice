@@ -56,7 +56,7 @@ CLIで登録する場合は `npx wrangler secret put GOOGLE_TTS_API_KEY --config
 
 ## 公開後の確認範囲
 
-`npm run check:production` は画面・API・静的ファイルが指定のCloudflare Accessログイン画面へ誘導されることを確認します。ログイン後の実機操作はこのチェックとは別です。ユーザーのログインCookieや、Accessを迂回するサービス用トークンはCIに渡しません。
+`npm run check:production` は主要画面・追加／編集／取り込み／問題集管理の深いURL・個別問題API・静的ファイルが指定のCloudflare Accessログイン画面へ誘導されることを確認します。ログイン後の実機操作はこのチェックとは別です。ユーザーのログインCookieや、Accessを迂回するサービス用トークンはCIに渡しません。
 
 ## 固定と更新
 

@@ -170,6 +170,11 @@ app.get('/api/questions', async c => {
   ]);
   return c.json({ questions: rows.results.map(decodeQuestion), total: count?.total ?? 0, page, pageSize: 20 });
 });
+app.get('/api/questions/:id', async c => {
+  const row = await c.env.DB.prepare('SELECT * FROM questions WHERE id=? AND deleted_at IS NULL').bind(c.req.param('id')).first<DbQuestion>();
+  if (!row) return c.json({ error: '問題が見つかりません。' }, 404);
+  return c.json(decodeQuestion(row));
+});
 app.post('/api/questions', async c => {
   const q = questionSchema.parse(await c.req.json());
   const results = await c.env.DB.batch([ensureCollection(c.env.DB, q.collection), c.env.DB.prepare(`INSERT OR IGNORE INTO questions(id,text,answer,aliases,reading,category,source,note,random_key,collection,majorCategory,minorCategory,retryAliases) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)

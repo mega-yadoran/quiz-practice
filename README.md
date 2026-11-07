@@ -76,6 +76,20 @@ Googleに送るのは出題時点の読み上げ用文章（空欄なら問題�
 
 公式: [導入](https://docs.cloud.google.com/text-to-speech/docs/get-started)、[音声一覧](https://docs.cloud.google.com/text-to-speech/docs/list-voices-and-types)、[料金](https://cloud.google.com/text-to-speech/pricing)。
 
+
+## 画面のURL
+
+| 画面 | パス |
+| --- | --- |
+| 練習 | `/practice`（`/`から置換） |
+| 問題管理 / お気に入り | `/questions` / `/favorites` |
+| 学習の記録 / 設定 | `/history` / `/settings` |
+| 問題追加 / CSV取り込み | `/questions/new` / `/questions/import` |
+| 個別編集 | `/questions/:id/edit`（お気に入りからは`/favorites/:id/edit`） |
+| 問題集管理 | `/questions/collections` |
+
+直接アクセス・再読み込み・ブラウザーの戻る／進むに対応。問題管理・お気に入りの`search`（検索語）、`collection`（問題集）、`page`（ページ番号）、学習の記録の`page`をクエリに保存します。`collection=`は未分類、指定なしは全問題集です。編集・取り込みを閉じると一覧の条件に戻れます。
+
 ## CSV形式
 
 必須列は `id,text,answer`。任意列は `aliases,retryAliases,collection,majorCategory,minorCategory,reading,category,source,note`。

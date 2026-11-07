@@ -94,3 +94,8 @@ describe('問題集・ジャンル・再回答のCSV', () => {
     expect(judgeAnswer('', q)).toBe('incorrect');
   });
 });
+
+ it('nested pages and single-question API require authentication', async () => {
+  const env = { ENVIRONMENT: 'production', OWNER_EMAIL: 'owner@example.com', ACCESS_TEAM_DOMAIN: 'test.cloudflareaccess.com', ACCESS_AUD: 'test' } as Bindings;
+  for (const path of ['/practice', '/questions/new', '/questions/test/edit', '/questions/import', '/questions/collections', '/favorites/test/edit', '/api/questions/test']) expect((await app.request('https://quiz.example.com' + path, {}, env)).status).toBe(401);
+});

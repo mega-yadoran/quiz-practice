@@ -38,6 +38,13 @@ try {
   assert.deepEqual(await request('/import/preview', 'POST', questions), { existing: [], added: 3, updated: 0 });
   await request('/import', 'POST', questions);
   assert.equal((await request('/questions')).total, 3);
+  assert.equal((await request('/questions/test-0')).id, 'test-0');
+  assert.equal((await fetch(base + '/api/questions/missing')).status, 404);
+  for (const path of ['/practice', '/questions/new', '/questions/test-0/edit', '/questions/import', '/questions/collections', '/favorites', '/history?page=2', '/settings']) {
+    const response = await fetch(base + path, { headers: { Accept: 'text/html', 'Sec-Fetch-Mode': 'navigate' } });
+    assert.equal(response.status, 200, path);
+    assert.ok((await response.text()).includes('<div id="root"></div>'), path);
+  }
   await request('/collections', 'POST', { name: '空の問題集' });
   assert.equal((await request('/collections')).collections.find(c => c.name === '統合テスト本').total, 3);
   assert.equal((await request('/questions?collection=' + encodeURIComponent('空の問題集'))).total, 0);
@@ -142,6 +149,7 @@ try {
   const backup = await request('/export');
   assert.equal(backup.version, 3);
   assert.equal(backup.deletedQuestions.length, members.length);
+  for (const member of members) assert.equal((await fetch(base + '/api/questions/' + encodeURIComponent(member.id))).status, 404, 'deleted question cannot be opened for editing');
   assert.equal(backup.favorites.some(f => members.some(q => q.id === f.question_id)), false);
   assert.ok(backup.attempts.find(a => a.id === pending.id).cancelled);
   const stale = await fetch(base + '/api/attempts/' + pending.id + '/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: 'ABC' }) });
