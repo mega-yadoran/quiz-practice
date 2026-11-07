@@ -90,10 +90,11 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
   const input = useRef<HTMLInputElement>(null);
   const watchdog = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const introCleanup = useRef<(() => void) | undefined>(undefined);
+  const stopDelay = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const utterance = useRef<SpeechSynthesisUtterance | null>(null);
   const token = useRef(0);
   const cancel = useCallback(() => {
-    token.current++; clearTimeout(watchdog.current); introCleanup.current?.(); introCleanup.current = undefined; window.speechSynthesis?.cancel(); utterance.current = null;
+    token.current++; clearTimeout(watchdog.current); clearTimeout(stopDelay.current); stopDelay.current = undefined; introCleanup.current?.(); introCleanup.current = undefined; window.speechSynthesis?.cancel(); utterance.current = null;
     pendingSpeech.current?.abort(); pendingSpeech.current = null;
     if (audio.current) { audio.current.pause(); audio.current.currentTime = 0; }
   }, []);
@@ -219,7 +220,12 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
     unlockAudio();
     void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound } })); refresh(); });
   };
-  const stop = () => { autoPlay.current = false; cancel(); setStage('answering'); setTimeout(() => input.current?.focus(), 0); };
+  const stop = () => {
+    autoPlay.current = false;
+    clearTimeout(stopDelay.current);
+    stopDelay.current = setTimeout(() => { stopDelay.current = undefined; cancel(); }, 300);
+    setStage('answering'); setTimeout(() => input.current?.focus(), 0);
+  };
   const a = state?.attempt;
   const answered = Boolean(a?.answered);
   const progress = state ? Math.max(0, state.seen - (a && !a.answered ? 1 : 0)) : 0;
