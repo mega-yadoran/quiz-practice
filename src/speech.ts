@@ -1,3 +1,21 @@
+import type { PracticeAttempt } from '../shared/model';
+
+// Only a newly confirmed correct result should make a sound, never a restored result.
+export function isNewCorrectResult(before: PracticeAttempt | null | undefined, after: PracticeAttempt | null): boolean {
+  return Boolean(before && after && before.id === after.id && after.answered && after.correct && !after.skipped && !(before.answered && before.correct));
+}
+
+export function playCorrectAnswer(player: HTMLAudioElement, fail: () => void): void {
+  let failed = false;
+  const onFailure = () => { if (!failed) { failed = true; fail(); } };
+  player.onended = null;
+  player.onerror = onFailure;
+  player.src = '/audio/correct.mp3';
+  player.currentTime = 0;
+  player.playbackRate = 1;
+  void player.play().catch(onFailure);
+}
+
 // Play the reusable announcement at normal speed, then leave 0.3 seconds of silence.
 export function announceQuestion(player: HTMLAudioElement, readBody: () => void, fail: () => void): () => void {
   let active = true;
