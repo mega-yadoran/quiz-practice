@@ -12,7 +12,8 @@
     "db:local": "wrangler d1 migrations apply q-practice --local --config wrangler.local.jsonc",
     "db:remote": "wrangler d1 migrations apply q-practice --remote",
     "deploy": "npm run build && wrangler deploy",
-    "check:deploy": "npm run build && wrangler deploy --dry-run"
+    "check:deploy": "npm run build && wrangler deploy --dry-run",
+    "check:production": "node scripts/check-production.mjs"
   },
   "engines": {
     "node": ">=22.12"
