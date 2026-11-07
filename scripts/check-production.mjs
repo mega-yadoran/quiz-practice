@@ -8,7 +8,7 @@ const base = 'https://q-practice.yado-quiz.workers.dev';
 const issuer = config.vars.ACCESS_TEAM_DOMAIN;
 assert.ok(issuer, 'ACCESS_TEAM_DOMAIN is missing');
 
-for (const path of ['/', '/api/me', '/favicon.svg']) {
+for (const path of ['/', '/practice', '/questions', '/questions/new', '/questions/example/edit', '/questions/import', '/questions/collections', '/favorites', '/favorites/example/edit', '/history', '/settings', '/api/me', '/api/questions/example', '/favicon.svg']) {
   let lastError;
   for (let attempt = 0; attempt < 5; attempt++) {
     try {

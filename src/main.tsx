@@ -7,9 +7,9 @@ import type { PracticeState, Question, QuestionRow, Settings, Stats } from '../s
 import { spokenText, type SpeechConfig } from '../shared/speech';
 import type { CollectionSummary } from '../shared/collections';
 import { announceQuestion, isNewCorrectResult, playCorrectAnswer } from './speech';
+import { Link, useRoute, navigate as go, closeRoute, updateQuery, listPage, type Page } from './router';
 import './style.css';
 
-type Page = 'practice' | 'questions' | 'favorites' | 'history' | 'settings';
 const pages: { id: Page; label: string; icon: string; en: string }[] = [
   { id: 'practice', label: '練習する', icon: 'headphones', en: 'PRACTICE' },
   { id: 'questions', label: '問題を管理', icon: 'book', en: 'QUESTION LIBRARY' },
@@ -30,7 +30,8 @@ function Pager({ page, total, onChange }: { page: number; total: number; onChang
 }
 
 function App() {
-  const [page, setPage] = useState<Page>('practice');
+  const route = useRoute();
+  const page = route.page;
   const [stats, setStats] = useState<Stats | null>(null);
   const [settings, setSettings] = useState<Settings>({ rate: 1, showQuestion: false });
   const [email, setEmail] = useState('');
@@ -45,21 +46,28 @@ function App() {
     } catch (e) { setError((e as Error).message); }
   }, []);
   useEffect(() => { void load(); }, [load, version]);
-  const navigate = (target: Page) => { window.speechSynthesis?.cancel(); setPage(target); window.scrollTo(0, 0); };
-  const current = pages.find(p => p.id === page)!;
+  const navigate = (target: Page) => go('/' + target);
+  useEffect(() => {
+    const viewTitle = route.view && { new: '新しい問題を追加', edit: '問題を編集', import: 'CSV取り込み', collections: '問題集を管理' }[route.view];
+    document.title = (viewTitle || pages.find(p => p.id === page)?.label || 'ページが見つかりません') + ' | Quiz Practice';
+    if (route.pathname === '/') go('/practice' + route.search, true);
+  }, [route.pathname]);
+  useEffect(() => { window.speechSynthesis?.cancel(); window.scrollTo(0, 0); }, [page]);
+  const current = pages.find(p => p.id === page) ?? { label: 'ページが見つかりません', en: 'PAGE NOT FOUND', icon: 'book' };
   return <div className="app-shell">
     <aside className="sidebar">
-      <a className="brand" href="#" onClick={e => { e.preventDefault(); navigate('practice'); }}><span className="brand-mark">Q<span /></span><span>Quiz Practice<small>わたしのクイズ練習帳</small></span></a>
+      <Link className="brand" href="/practice"><span className="brand-mark">Q<span /></span><span>Quiz Practice<small>わたしのクイズ練習帳</small></span></Link>
       <div className="sidebar-label">MY WORKSPACE</div>
-      <nav aria-label="メインナビゲーション">{pages.map(p => <button key={p.id} className={`nav-item ${page === p.id ? 'active' : ''}`} aria-current={page === p.id ? 'page' : undefined} onClick={() => navigate(p.id)}><Icon name={p.icon} /><span>{p.label}</span>{p.id === 'favorites' && !!stats?.favorites && <span className="nav-count">{stats.favorites}</span>}</button>)}</nav>
+      <nav aria-label="メインナビゲーション">{pages.map(p => <Link href={'/' + p.id} key={p.id} className={`nav-item ${page === p.id ? 'active' : ''}`} aria-current={page === p.id ? 'page' : undefined}><Icon name={p.icon} /><span>{p.label}</span>{p.id === 'favorites' && !!stats?.favorites && <span className="nav-count">{stats.favorites}</span>}</Link>)}</nav>
       <div className="sidebar-note"><span className="tiny-line" /><p>ひとつの「知らない」を、<br />ひとつの「わかった」に。</p><small>ONE QUESTION AT A TIME.</small></div>
       <div className="account"><span className="avatar">Y</span><span>Personal workspace<small title={email}>{email || '接続を確認しています'}</small></span><Icon name="shield" size={16} /></div>
     </aside>
     <main className="main">
       <div className="topbar"><span>MY QUIZ NOTEBOOK <span className="topbar-slash">/</span> {current.en}</span><span className="private-badge"><span />自分だけの練習帳</span></div>
       <div className="content">
-        <header className="page-heading"><div><p className="eyebrow">{current.en}</p><h1>{page === 'practice' ? '聴いて、考えて、覚える。' : current.label}</h1><p className="subtitle">{{ practice: '今日も、一問ずつ。自分のペースで知識を積み重ねよう。', questions: '集めた問題を、自分の知識に変えていこう。', favorites: 'もう一度見返したい問題を、ここに。', history: '小さな積み重ねを、振り返ろう。', settings: '心地よく練習するための、自分の設定。' }[page]}</p></div><span className="heading-decoration" aria-hidden="true">{page === 'practice' ? 'Q.' : <Icon name={current.icon} size={44} />}</span></header>
+        <header className="page-heading"><div><p className="eyebrow">{current.en}</p><h1>{page === 'practice' ? '聴いて、考えて、覚える。' : current.label}</h1><p className="subtitle">{{ practice: '今日も、一問ずつ。自分のペースで知識を積み重ねよう。', questions: '集めた問題を、自分の知識に変えていこう。', favorites: 'もう一度見返したい問題を、ここに。', history: '小さな積み重ねを、振り返ろう。', settings: '心地よく練習するための、自分の設定。', 'not-found': 'メニューから目的の画面を開いてください。' }[page]}</p></div><span className="heading-decoration" aria-hidden="true">{page === 'practice' ? 'Q.' : <Icon name={current.icon} size={44} />}</span></header>
         {error && <ErrorBox error={error} retry={() => void load()} />}
+        {page === 'not-found' && <Empty title="ページが見つかりません"><p>URLを確認するか、メニューから移動してください。</p><Link className="button primary" href="/practice">練習する</Link></Empty>}
         {page === 'practice' && <Practice settings={settings} stats={stats} refresh={refresh} onQuestions={() => navigate('questions')} />}
         {(page === 'questions' || page === 'favorites') && <Library key={page} favoriteOnly={page === 'favorites'} refresh={refresh} />}
         {page === 'history' && <History stats={stats} />}
@@ -67,7 +75,7 @@ function App() {
         <footer className="page-footer">QUIZ PRACTICE <span>続けるほど、知ることが楽しくなる。</span></footer>
       </div>
     </main>
-    <nav className="mobile-nav" aria-label="モバイルナビゲーション">{pages.map(p => <button key={p.id} className={page === p.id ? 'active' : ''} aria-current={page === p.id ? 'page' : undefined} onClick={() => navigate(p.id)}><Icon name={p.icon} size={21} /><span>{p.id === 'questions' ? '問題' : p.id === 'history' ? '記録' : p.id === 'practice' ? '練習' : p.label}</span></button>)}</nav>
+    <nav className="mobile-nav" aria-label="モバイルナビゲーション">{pages.map(p => <Link href={'/' + p.id} key={p.id} className={page === p.id ? 'active' : ''} aria-current={page === p.id ? 'page' : undefined}><Icon name={p.icon} size={21} /><span>{p.id === 'questions' ? '問題' : p.id === 'history' ? '記録' : p.id === 'practice' ? '練習' : p.label}</span></Link>)}</nav>
   </div>;
 }
 
@@ -287,16 +295,23 @@ function Stat({ label, value, unit, icon }: { label: string; value?: number; uni
 function Library({ favoriteOnly, refresh }: { favoriteOnly: boolean; refresh: () => void }) {
   const [rows, setRows] = useState<QuestionRow[]>([]);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState('');
-  const [collection, setCollection] = useState('*');
+  const route = useRoute();
+  const search = route.params.get('search') ?? '';
+  const collection = route.params.get('collection') ?? '*';
+  const setSearch = (value: string) => updateQuery({ search: value, page: null }, true);
+  const setCollection = (value: string) => updateQuery({ collection: value === '*' ? null : value, page: null });
   const [collections, setCollections] = useState<{ name: string; total: number }[]>([]);
-  const [managingCollections, setManagingCollections] = useState(false);
-  const [page, setPage] = useState(1);
+  const managingCollections = route.view === 'collections';
+  const base = favoriteOnly ? '/favorites' : '/questions';
+  const parent = base + route.search;
+  const open = (path: string) => go(path + route.search, false, true);
+  const close = () => closeRoute(parent);
+  const page = listPage(route.params);
+  const setPage = (value: number) => updateQuery({ page: value === 1 ? null : String(value) });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [version, setVersion] = useState(0);
-  const [editing, setEditing] = useState<Question | 'new' | null>(null);
-  const [importing, setImporting] = useState(false);
+  const importing = route.view === 'import';
   const [busy, setBusy] = useState(false);
   const request = useRef(0);
   const reload = () => { setVersion(v => v + 1); refresh(); };
@@ -324,16 +339,16 @@ function Library({ favoriteOnly, refresh }: { favoriteOnly: boolean; refresh: ()
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   return <>
-    <div className="collection-toolbar"><label>問題集<select aria-label="問題集で絞り込み" value={collection} onChange={e => { setCollection(e.target.value); setPage(1); }}><option value="*">すべての問題集</option>{collections.map(c => <option key={c.name} value={c.name}>{c.name || '未分類'}（{c.total}問）</option>)}</select></label>{!favoriteOnly && <button className="button secondary" onClick={() => setManagingCollections(true)}><Icon name="book" />問題集を管理</button>}</div>
-    <div className="library-toolbar"><label className="search-field"><Icon name="search" /><input aria-label="問題を検索" placeholder="問題文・正解・ジャンル・IDで検索" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} /></label>{!favoriteOnly && <div className="toolbar-actions"><button className="button secondary" onClick={() => setImporting(true)}><Icon name="upload" />CSV取り込み</button><button className="button primary" onClick={() => setEditing('new')}><Icon name="plus" />問題を追加</button></div>}</div>
+    <div className="collection-toolbar"><label>問題集<select aria-label="問題集で絞り込み" value={collection} onChange={e => { setCollection(e.target.value); }}><option value="*">すべての問題集</option>{collections.map(c => <option key={c.name} value={c.name}>{c.name || '未分類'}（{c.total}問）</option>)}</select></label>{!favoriteOnly && <button className="button secondary" onClick={() => open('/questions/collections')}><Icon name="book" />問題集を管理</button>}</div>
+    <div className="library-toolbar"><label className="search-field"><Icon name="search" /><input aria-label="問題を検索" placeholder="問題文・正解・ジャンル・IDで検索" value={search} onChange={e => { setSearch(e.target.value); }} /></label>{!favoriteOnly && <div className="toolbar-actions"><button className="button secondary" onClick={() => open('/questions/import')}><Icon name="upload" />CSV取り込み</button><button className="button primary" onClick={() => open('/questions/new')}><Icon name="plus" />問題を追加</button></div>}</div>
     {error && <ErrorBox error={error} retry={() => setVersion(v => v + 1)} />}
     <section className="card library-card"><div className="list-heading"><h2>{favoriteOnly ? 'お気に入りの問題' : 'すべての問題'}<span>{total.toLocaleString()} 問</span></h2><span className="muted">{favoriteOnly ? '見返して、知識を定着させよう' : '20問ずつ表示'}</span></div>
-      {loading ? <Loading /> : !rows.length ? <Empty icon={favoriteOnly ? 'star' : 'book'} title={search ? '一致する問題がありません' : favoriteOnly ? 'お気に入りはまだありません' : '自分だけの問題集を作ろう'}><p>{favoriteOnly ? '練習の判定後や問題一覧の星マークから追加できます。' : '手入力で追加するか、CSVを取り込んで始めましょう。'}</p>{!favoriteOnly && !search && <button className="button secondary" onClick={() => setImporting(true)}><Icon name="upload" />例題・CSVテンプレートを見る</button>}</Empty> : <div className="question-list">{rows.map(q => <article className="question-row" key={q.id}><button className={`favorite-toggle ${q.favorite ? 'selected' : ''}`} aria-label={q.favorite ? 'お気に入りを解除' : 'お気に入りに追加'} aria-pressed={q.favorite} disabled={busy} onClick={() => void toggle(q)}><Icon name="star" fill={q.favorite} /></button><div className="question-row-body"><div className="row-meta"><span>{[q.collection, q.majorCategory, q.minorCategory].filter(Boolean).join(' / ') || q.category || '未分類'}</span><small>{q.id}</small></div><h3>{q.text}</h3><p><span>正解</span>{q.answer}</p>{!!q.retryAliases.length && <p className="row-extra">もう一回：{q.retryAliases.join(" ／ ")}</p>}{q.note && <details><summary>メモ・別解を見る</summary><p>{q.note}</p>{!!q.aliases.length && <p>別解：{q.aliases.join(' ／ ')}</p>}{q.source && <p>出典：{q.source}</p>}</details>}{!q.note && (!!q.aliases.length || q.source) && <p className="row-extra">{q.aliases.length ? `別解：${q.aliases.join(' ／ ')}` : ''}{q.source ? `　出典：${q.source}` : ''}</p>}</div><button className="icon-button" aria-label={`${q.id}を編集`} onClick={() => setEditing(q)}><Icon name="edit" size={19} /></button></article>)}</div>}
+      {loading ? <Loading /> : !rows.length ? <Empty icon={favoriteOnly ? 'star' : 'book'} title={search ? '一致する問題がありません' : favoriteOnly ? 'お気に入りはまだありません' : '自分だけの問題集を作ろう'}><p>{favoriteOnly ? '練習の判定後や問題一覧の星マークから追加できます。' : '手入力で追加するか、CSVを取り込んで始めましょう。'}</p>{!favoriteOnly && !search && <button className="button secondary" onClick={() => open('/questions/import')}><Icon name="upload" />例題・CSVテンプレートを見る</button>}</Empty> : <div className="question-list">{rows.map(q => <article className="question-row" key={q.id}><button className={`favorite-toggle ${q.favorite ? 'selected' : ''}`} aria-label={q.favorite ? 'お気に入りを解除' : 'お気に入りに追加'} aria-pressed={q.favorite} disabled={busy} onClick={() => void toggle(q)}><Icon name="star" fill={q.favorite} /></button><div className="question-row-body"><div className="row-meta"><span>{[q.collection, q.majorCategory, q.minorCategory].filter(Boolean).join(' / ') || q.category || '未分類'}</span><small>{q.id}</small></div><h3>{q.text}</h3><p><span>正解</span>{q.answer}</p>{!!q.retryAliases.length && <p className="row-extra">もう一回：{q.retryAliases.join(" ／ ")}</p>}{q.note && <details><summary>メモ・別解を見る</summary><p>{q.note}</p>{!!q.aliases.length && <p>別解：{q.aliases.join(' ／ ')}</p>}{q.source && <p>出典：{q.source}</p>}</details>}{!q.note && (!!q.aliases.length || q.source) && <p className="row-extra">{q.aliases.length ? `別解：${q.aliases.join(' ／ ')}` : ''}{q.source ? `　出典：${q.source}` : ''}</p>}</div><button className="icon-button" aria-label={`${q.id}を編集`} onClick={() => open(base + '/' + encodeURIComponent(q.id) + '/edit')}><Icon name="edit" size={19} /></button></article>)}</div>}
       <Pager page={page} total={total} onChange={setPage} />
     </section>
-    {managingCollections && <CollectionsDialog onClose={() => setManagingCollections(false)} onChanged={() => { setCollection('*'); setPage(1); reload(); }} />}
-    {editing && <QuestionEditor question={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} />}
-    {importing && <ImportDialog onClose={() => setImporting(false)} onSaved={() => { setImporting(false); setPage(1); reload(); }} />}
+    {managingCollections && <CollectionsDialog onClose={close} onChanged={() => { updateQuery({ collection: null, page: null }, true); reload(); }} />}
+    {(route.view === 'new' || route.view === 'edit') && <RoutedQuestionEditor key={route.id ?? 'new'} id={route.id} onClose={close} onSaved={() => { reload(); close(); }} />}
+    {importing && <ImportDialog onClose={close} onSaved={() => { reload(); close(); }} />}
   </>;
 }
 
@@ -388,6 +403,19 @@ function CollectionsDialog({ onClose, onChanged }: { onClose: () => void; onChan
       catch (e) { setError((e as Error).message); } finally { setBusy(false); }
     }}><div className="delete-impact"><strong>「{selection.item.name}」の{selection.item.total.toLocaleString()}問を削除します。</strong><p>問題集と所属問題を一覧・出題から外し、お気に入りも解除します。解答中の所属問題は中止します。過去の解答履歴と成績は残ります。</p><p>必要な問題は削除前にCSVを保存してください。保存したCSVを再取り込みすると問題を戻せます。</p><button type="button" className="button secondary" disabled={busy} onClick={() => void backup(selection.item)}>削除前にCSVを保存</button></div><label>確認のため「{selection.item.name}」と入力<input value={confirmation} onChange={e => setConfirmation(e.target.value)} disabled={busy} autoComplete="off" autoFocus /></label><div className="modal-actions"><button type="button" className="button secondary" disabled={busy} onClick={() => { setSelection(null); setName(''); setError(''); }}>戻る</button><button className="button danger" disabled={busy || confirmation !== selection.item.name}>{busy ? '削除しています…' : '問題集と所属問題を削除'}</button></div></form>}
   </Modal>;
+}
+
+function RoutedQuestionEditor({ id, onClose, onSaved }: { id?: string; onClose: () => void; onSaved: () => void }) {
+  const [question, setQuestion] = useState<Question | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!id) return;
+    let active = true;
+    api<Question>('/questions/' + encodeURIComponent(id)).then(q => { if (active) setQuestion(q); }).catch(e => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [id]);
+  if (id && !question) return <Modal title="問題を編集" onClose={onClose}>{error ? <ErrorBox error={error} /> : <Loading />}</Modal>;
+  return <QuestionEditor question={question} onClose={onClose} onSaved={onSaved} />;
 }
 
 function QuestionEditor({ question, onClose, onSaved }: { question: Question | null; onClose: () => void; onSaved: () => void }) {
@@ -470,8 +498,10 @@ function ImportDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =
 
 interface HistoryRow { id: string; question_text: string; answer: string; submitted_answer: string; correct: number; overridden: number; skipped: number; answered_at: string }
 function History({ stats }: { stats: Stats | null }) {
+  const route = useRoute();
   const [rows, setRows] = useState<HistoryRow[]>([]);
-  const [page, setPage] = useState(1);
+  const page = listPage(route.params);
+  const setPage = (value: number) => updateQuery({ page: value === 1 ? null : String(value) });
   const [total, setTotal] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);

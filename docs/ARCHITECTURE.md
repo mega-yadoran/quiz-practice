@@ -8,6 +8,7 @@
 | --- | --- |
 | `src/main.tsx` | 練習・問題管理・お気に入り・履歴・設定のReact画面。読み上げと各APIの呼び出し |
 | `src/style.css` | レスポンシブなレイアウト、モバイルの下部ナビゲーション |
+| `src/router.tsx` | パス解釈・History API・リンク・URLクエリの更新 |
 | `src/api.ts` | API通信、エラー表示用のメッセージ、ファイル保存 |
 | `src/icons.tsx` | SVGアイコン |
 | `shared/model.ts` | 問題のZodスキーマ、共有型、文字列の正規化と判定 |
@@ -20,6 +21,14 @@
 | `deploy/` | 初期設定時に使ったAccessアプリ・メール認証の定義。通常のデプロイで自動適用はされない |
 
 ブラウザ → Cloudflare Access → Worker → D1という構成。画面はWorkerのASSETS bindingから配信する。本番は常駐Node.jsサーバーではない。Viteの開発画面は `/api` をローカルWorkerの8797番ポートへ転送する。
+
+## クライアントのルーティング
+
+`src/router.tsx`の`parseRoute`が主要5画面とライブラリ内の補助画面を解釈。`useSyncExternalStore`で`popstate`とアプリ内遷移を購読し、URLを画面・検索・問題集・ページ番号の唯一の参照元にする。外部ルーターの追加依存はない。
+
+補助画面を内部から開くと履歴に印を付け、閉じると1つ戻る。直接アクセスでは対応する一覧へ置換する。編集対象は一覧20件から探さず、認証済み`GET /api/questions/:id`から取得し、有効な問題だけ返す。非同期応答は画面移動後に反映しない。画面タイトルとメニューの選択状態もパスに追従する。
+
+Workersの既存`single-page-application`設定で深いURLにもindex.htmlを返し、`run_worker_first: true`による全パスの認証を維持。知らない画面パスはクライアントが案内を表示する（HTML応答はSPAの200）。
 
 ## データモデル
 
