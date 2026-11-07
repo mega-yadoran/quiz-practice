@@ -5,6 +5,10 @@ export const questionSchema = z.object({
   text: z.string().trim().min(1, '問題文がありません').max(4000),
   answer: z.string().trim().min(1, '正解がありません').max(300),
   aliases: z.array(z.string().trim().min(1).max(300)).max(30).default([]),
+  retryAliases: z.array(z.string().trim().min(1).max(300)).max(50).default([]),
+  collection: z.string().trim().max(100).default(''),
+  majorCategory: z.string().trim().max(100).default(''),
+  minorCategory: z.string().trim().max(100).default(''),
   reading: z.string().trim().max(4000).default(''),
   category: z.string().trim().max(100).default(''),
   source: z.string().trim().max(1000).default(''),
@@ -21,6 +25,11 @@ export function isCorrect(value: string, question: Pick<Question, 'answer' | 'al
   const normalized = normalizeAnswer(value);
   return normalized.length > 0 && [question.answer, ...question.aliases].some(a => normalizeAnswer(a) === normalized);
 }
+export function judgeAnswer(value: string, question: Pick<Question, 'answer' | 'aliases' | 'retryAliases'>): 'correct' | 'retry' | 'incorrect' {
+  if (isCorrect(value, question)) return 'correct';
+  const normalized = normalizeAnswer(value);
+  return normalized && question.retryAliases.some(a => normalizeAnswer(a) === normalized) ? 'retry' : 'incorrect';
+}
 
 export interface PracticeAttempt {
   id: string;
@@ -28,10 +37,15 @@ export interface PracticeAttempt {
   text: string;
   reading: string;
   category: string;
+  collection: string;
+  majorCategory: string;
+  minorCategory: string;
+  retryRequested: boolean;
   answered: boolean;
   favorite: boolean;
   answer?: string;
   aliases?: string[];
+  retryAliases?: string[];
   note?: string;
   source?: string;
   submittedAnswer?: string;

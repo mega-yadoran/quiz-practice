@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAnswer, isCorrect, questionSchema } from '../shared/model';
-import { parseQuestionsCsv, questionsCsv, sampleQuestions } from '../shared/csv';
+import { normalizeAnswer, isCorrect, judgeAnswer, questionSchema } from '../shared/model';
+import { parseQuestionsCsv, parseCriteria, questionsCsv, sampleQuestions } from '../shared/csv';
 import app, { type Bindings } from '../worker';
 
 describe('回答の照合', () => {
@@ -30,11 +30,11 @@ describe('CSV取り込み', () => {
     expect(parsed.errors).toEqual([]);
     expect(parsed.questions[0].aliases).toEqual(['ふじさん', 'フジサン']);
   });
-  it('重複ID・空の正解・列不足・500問超過を拒否する', () => {
+  it('重複ID・空の正解・列不足・10000問超過を拒否する', () => {
     expect(parseQuestionsCsv('id,text,answer\nq1,a,b\nq1,c,d').errors.join()).toContain('重複');
     expect(parseQuestionsCsv('id,text,answer\nq1,a,').errors.length).toBeGreaterThan(0);
     expect(parseQuestionsCsv('id,text\nq1,a').errors.join()).toContain('必須の列');
-    expect(parseQuestionsCsv('id,text,answer\n' + Array.from({ length: 501 }, (_, i) => `q${i},a,b`).join('\n')).errors.join()).toContain('500問');
+    expect(parseQuestionsCsv('id,text,answer\n' + Array.from({ length: 10001 }, (_, i) => `q${i},a,b`).join('\n')).errors.join()).toContain('10000問');
   });
   it('HTMLなどをIDとして使わない', () => {
     expect(questionSchema.safeParse({ ...sampleQuestions[0], id: '<script>' }).success).toBe(false);
@@ -59,5 +59,38 @@ describe('公開時のアクセス制御', () => {
     const env = { ENVIRONMENT: 'local', OWNER_EMAIL: 'owner@example.com' } as Bindings;
     expect((await app.request('http://127.0.0.1/api/import', { method: 'POST', headers: { Origin: 'https://evil.example', 'Content-Type': 'application/json' }, body: '[]' }, env)).status).toBe(403);
     expect((await app.request('http://127.0.0.1/api/import', { method: 'POST', body: 'x=y' }, env)).status).toBe(415);
+  });
+});
+
+describe('問題集・ジャンル・再回答のCSV', () => {
+  it('800問を番号と問題集名で識別し、別の問題集と衝突させない', () => {
+    const csv = ',大ジャンル,小ジャンル,問題文,答え,別解・正誤判定基準\n' + Array.from({ length: 800 }, (_, i) => (i + 1) + ',科学,単位,単位は？,カンデラ,△：cd').join('\n');
+    const parsed = parseQuestionsCsv(csv, { collection: 'abc本戦' });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.questions).toHaveLength(800);
+    expect(parsed.questions[0]).toMatchObject({ id: 'abc本戦-1', collection: 'abc本戦', majorCategory: '科学', minorCategory: '単位', retryAliases: ['cd'] });
+    expect(parseQuestionsCsv(csv, { collection: '別問題集' }).questions[0].id).not.toBe(parsed.questions[0].id);
+    expect(parseQuestionsCsv(csv).errors.length).toBeGreaterThan(0);
+  });
+  it('○・△・英語表記を分離し、×をメモにも保存しない', () => {
+    const parsed = parseCriteria('candela\\n○：カンデラ単位\n△：（早く押して）cd、シーディー\n×：ルクス');
+    expect(parsed.aliases).toEqual(['candela', 'カンデラ単位']);
+    expect(parsed.retryAliases).toEqual(['cd', 'シーディー']);
+    expect(parsed.note).not.toContain('ルクス');
+    expect(parseCriteria('△：『大魔界村』『超魔界村』').retryAliases).toEqual(['大魔界村', '超魔界村']);
+    expect(parseCriteria('△：(COOH)2').retryAliases).toEqual(['(COOH)2']);
+  });
+  it('読み・作品名の表記を別解にし、新しい列を往復できる', () => {
+    const parsed = parseQuestionsCsv(',問題文,答え,別解・正誤判定基準\n1,誰？,夏目漱石（なつめ・そうせき）,○：漱石', { collection: '本' });
+    expect(parsed.questions[0].aliases).toContain('夏目漱石');
+    expect(parsed.questions[0].aliases).toContain('なつめそうせき');
+    expect(parseQuestionsCsv(questionsCsv(parsed.questions)).questions).toEqual(parsed.questions);
+  });
+  it('登録した△だけを再回答にし、正解を優先する', () => {
+    const q = { answer: 'カンデラ', aliases: ['candela'], retryAliases: ['cd', 'candela'] };
+    expect(judgeAnswer('ＣＤ', q)).toBe('retry');
+    expect(judgeAnswer('candela', q)).toBe('correct');
+    expect(judgeAnswer('ルクス', q)).toBe('incorrect');
+    expect(judgeAnswer('', q)).toBe('incorrect');
   });
 });
