@@ -225,14 +225,14 @@ app.put('/api/favorites/:id', async c => {
   return c.json({ ok: true });
 });
 
-async function getPractice(db: D1Database, collection: string | null = null): Promise<PracticeState> {
-  const round = await db.prepare('SELECT id,number FROM rounds WHERE collection IS ? AND invalidated=0 ORDER BY id DESC LIMIT 1').bind(collection).first<{ id: number; number: number }>();
-  const count = await db.prepare('SELECT COUNT(*) total FROM questions WHERE deleted_at IS NULL AND hidden=0 AND (? IS NULL OR collection=?)').bind(collection, collection).first<{ total: number }>();
+async function getPractice(db: D1Database, collection: string | null = null, favoriteOnly = false): Promise<PracticeState> {
+  const round = await db.prepare('SELECT id,number FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0 ORDER BY id DESC LIMIT 1').bind(collection, Number(favoriteOnly)).first<{ id: number; number: number }>();
+  const count = await db.prepare('SELECT COUNT(*) total FROM questions q WHERE deleted_at IS NULL AND hidden=0 AND (? IS NULL OR collection=?) AND (?=0 OR EXISTS(SELECT 1 FROM favorites f WHERE f.question_id=q.id))').bind(collection, collection, Number(favoriteOnly)).first<{ total: number }>();
   const total = count?.total ?? 0;
   if (!round) return { collection, round: 0, total, seen: 0, attempt: null, completed: false };
   const row = await db.prepare(`SELECT a.*,(SELECT hidden FROM questions WHERE id=a.question_id) hidden,f.question_id IS NOT NULL favorite FROM attempts a LEFT JOIN favorites f ON f.question_id=a.question_id WHERE a.round_id=? AND a.cancelled=0 AND EXISTS(SELECT 1 FROM questions q WHERE q.id=a.question_id AND q.deleted_at IS NULL AND (q.hidden=0 OR a.answered_at IS NOT NULL)) ORDER BY a.rowid DESC LIMIT 1`).bind(round.id).first<DbAttempt>();
   const seen = await db.prepare('SELECT COUNT(*) count FROM attempts a WHERE round_id=? AND cancelled=0 AND EXISTS(SELECT 1 FROM questions q WHERE q.id=a.question_id AND q.deleted_at IS NULL AND q.hidden=0)').bind(round.id).first<{ count: number }>();
-  const remaining = await db.prepare('SELECT EXISTS(SELECT 1 FROM questions q WHERE q.deleted_at IS NULL AND q.hidden=0 AND (? IS NULL OR q.collection=?) AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.round_id=? AND a.question_id=q.id)) remaining').bind(collection, collection, round.id).first<{ remaining: number }>();
+  const remaining = await db.prepare('SELECT EXISTS(SELECT 1 FROM questions q WHERE q.deleted_at IS NULL AND q.hidden=0 AND (? IS NULL OR q.collection=?) AND (?=0 OR EXISTS(SELECT 1 FROM favorites f WHERE f.question_id=q.id)) AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.round_id=? AND a.question_id=q.id)) remaining').bind(collection, collection, Number(favoriteOnly), round.id).first<{ remaining: number }>();
   const state: PracticeState = { collection, round: round.number, total, seen: seen?.count ?? 0, completed: !remaining?.remaining && (!row || row.answered_at !== null), attempt: null };
   if (row) state.attempt = {
     id: row.id, questionId: row.question_id, text: row.question_text, reading: row.reading,
@@ -244,50 +244,51 @@ async function getPractice(db: D1Database, collection: string | null = null): Pr
 app.get('/api/practice/options', async c => {
   const db = c.env.DB;
   const rows = await db.prepare(`SELECT s.name,COUNT(q.id) total,
-    (SELECT COUNT(*) FROM attempts a WHERE a.round_id=(SELECT id FROM rounds WHERE collection=s.name AND invalidated=0 ORDER BY id DESC LIMIT 1) AND a.answered_at IS NOT NULL AND a.cancelled=0 AND EXISTS(SELECT 1 FROM questions v WHERE v.id=a.question_id AND v.deleted_at IS NULL AND v.hidden=0)) progress
+    (SELECT COUNT(*) FROM attempts a WHERE a.round_id=(SELECT id FROM rounds WHERE collection=s.name AND favorite_only=0 AND invalidated=0 ORDER BY id DESC LIMIT 1) AND a.answered_at IS NOT NULL AND a.cancelled=0 AND EXISTS(SELECT 1 FROM questions v WHERE v.id=a.question_id AND v.deleted_at IS NULL AND v.hidden=0)) progress
     FROM question_sets s LEFT JOIN questions q ON q.collection=s.name AND q.deleted_at IS NULL AND q.hidden=0 GROUP BY s.name ORDER BY s.name`).all();
-  const last = await db.prepare(`SELECT r.collection,r.invalidated FROM settings s JOIN rounds r ON r.id=s.last_practice_round WHERE s.id=1`).first<{ collection: string | null; invalidated: number }>();
+  const last = await db.prepare(`SELECT r.collection,r.favorite_only,r.invalidated FROM settings s JOIN rounds r ON r.id=s.last_practice_round WHERE s.id=1`).first<{ collection: string | null; favorite_only: number; invalidated: number }>();
   const total = await db.prepare('SELECT COUNT(*) total FROM questions WHERE deleted_at IS NULL AND hidden=0').first<{ total: number }>();
   let resume = null;
   if (last && !last.invalidated) {
-    const state = await getPractice(db, last.collection);
-    if (state.total) resume = { collection: last.collection, total: state.total, progress: state.seen - (state.attempt && !state.attempt.answered ? 1 : 0) };
+    const state = await getPractice(db, last.collection, Boolean(last.favorite_only));
+    if (state.total) resume = { favoriteOnly: Boolean(last.favorite_only), collection: last.collection, total: state.total, progress: state.seen - (state.attempt && !state.attempt.answered ? 1 : 0) };
   }
   return c.json({ last: resume, collections: rows.results, total: total?.total ?? 0 });
 });
-app.get('/api/practice', async c => c.json(await getPractice(c.env.DB, practiceScopeSchema.parse(c.req.query('collection') ?? null))));
+app.get('/api/practice', async c => c.json(await getPractice(c.env.DB, practiceScopeSchema.parse(c.req.query('collection') ?? null), c.req.query('favorite') === '1')));
 app.post('/api/practice/select', async c => {
-  const { collection } = practiceNextSchema.parse(await c.req.json());
-  await c.env.DB.prepare('UPDATE settings SET last_practice_round=(SELECT id FROM rounds WHERE collection IS ? AND invalidated=0 ORDER BY id DESC LIMIT 1) WHERE id=1').bind(collection).run();
-  return c.json(await getPractice(c.env.DB, collection));
+  const { collection, favoriteOnly } = practiceNextSchema.parse(await c.req.json());
+  await c.env.DB.prepare('UPDATE settings SET last_practice_round=(SELECT id FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0 ORDER BY id DESC LIMIT 1) WHERE id=1').bind(collection, Number(favoriteOnly)).run();
+  return c.json(await getPractice(c.env.DB, collection, favoriteOnly));
 });
 app.post('/api/practice/next', async c => {
-  const { newRound, collection } = practiceNextSchema.parse(await c.req.json());
+  const { newRound, collection, favoriteOnly } = practiceNextSchema.parse(await c.req.json());
   const db = c.env.DB;
-  const state = await getPractice(db, collection);
+  const state = await getPractice(db, collection, favoriteOnly);
   if (!state.total) return c.json(state);
   if ((state.attempt && !state.attempt.answered) || (state.completed && !newRound)) {
-    await db.prepare('UPDATE settings SET last_practice_round=(SELECT id FROM rounds WHERE collection IS ? AND invalidated=0 ORDER BY id DESC LIMIT 1) WHERE id=1').bind(collection).run();
+    await db.prepare('UPDATE settings SET last_practice_round=(SELECT id FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0 ORDER BY id DESC LIMIT 1) WHERE id=1').bind(collection, Number(favoriteOnly)).run();
     return c.json(state);
   }
   // Conditional insert prevents simultaneous devices from creating duplicate rounds.
-  await db.prepare(`INSERT INTO rounds(start_key,collection,number) SELECT ?,?,COALESCE((SELECT number+1 FROM rounds WHERE collection IS ? AND invalidated=0 ORDER BY id DESC LIMIT 1),1)
-    WHERE NOT EXISTS(SELECT 1 FROM rounds WHERE collection IS ? AND invalidated=0)
-    OR NOT EXISTS(SELECT 1 FROM questions q WHERE q.deleted_at IS NULL AND q.hidden=0 AND (? IS NULL OR q.collection=?) AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.round_id=(SELECT id FROM rounds WHERE collection IS ? AND invalidated=0 ORDER BY id DESC LIMIT 1) AND a.question_id=q.id))`)
-    .bind(Math.random(), collection, collection, collection, collection, collection, collection).run();
-  const round = await db.prepare('SELECT * FROM rounds WHERE collection IS ? AND invalidated=0 ORDER BY id DESC LIMIT 1').bind(collection).first<{ id: number; start_key: number }>();
-  if (!round) return c.json(await getPractice(db, collection));
+  await db.prepare(`INSERT INTO rounds(start_key,collection,favorite_only,number) SELECT ?,?,?,COALESCE((SELECT number+1 FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0 ORDER BY id DESC LIMIT 1),1)
+    WHERE NOT EXISTS(SELECT 1 FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0)
+    OR NOT EXISTS(SELECT 1 FROM questions q WHERE q.deleted_at IS NULL AND q.hidden=0 AND (? IS NULL OR q.collection=?) AND (?=0 OR EXISTS(SELECT 1 FROM favorites f WHERE f.question_id=q.id)) AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.round_id=(SELECT id FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0 ORDER BY id DESC LIMIT 1) AND a.question_id=q.id))`)
+    .bind(Math.random(), collection, Number(favoriteOnly), collection, Number(favoriteOnly), collection, Number(favoriteOnly), collection, collection, Number(favoriteOnly), collection, Number(favoriteOnly)).run();
+  const round = await db.prepare('SELECT * FROM rounds WHERE collection IS ? AND favorite_only=? AND invalidated=0 ORDER BY id DESC LIMIT 1').bind(collection, Number(favoriteOnly)).first<{ id: number; start_key: number }>();
+  if (!round) return c.json(await getPractice(db, collection, favoriteOnly));
   // Two indexed ranges pick an unseen question without ORDER BY RANDOM() over the whole bank.
-  const select = `SELECT q.* FROM questions q WHERE q.deleted_at IS NULL AND q.hidden=0 AND (? IS NULL OR q.collection=?) AND q.random_key %COMPARE% ? AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.round_id=? AND a.question_id=q.id) ORDER BY q.random_key,q.id LIMIT 1`;
-  const q = await db.prepare(select.replace('%COMPARE%', '>=' )).bind(collection, collection, round.start_key, round.id).first<DbQuestion>()
-    ?? await db.prepare(select.replace('%COMPARE%', '<')).bind(collection, collection, round.start_key, round.id).first<DbQuestion>();
-  if (q) await db.prepare(`INSERT OR IGNORE INTO attempts(id,round_id,question_id,question_text,reading,answer,aliases,category,note,source,collection,majorCategory,minorCategory,retryAliases) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? FROM questions WHERE id=? AND deleted_at IS NULL AND hidden=0 AND collection=? AND EXISTS(SELECT 1 FROM rounds WHERE id=? AND invalidated=0)`)
-    .bind(crypto.randomUUID(), round.id, q.id, q.text, q.reading, q.answer, q.aliases, q.category, q.note, q.source, q.collection, q.majorCategory, q.minorCategory, q.retryAliases, q.id, q.collection, round.id).run();
+  const select = `SELECT q.* FROM questions q WHERE q.deleted_at IS NULL AND q.hidden=0 AND (? IS NULL OR q.collection=?) AND (?=0 OR EXISTS(SELECT 1 FROM favorites f WHERE f.question_id=q.id)) AND q.random_key %COMPARE% ? AND NOT EXISTS(SELECT 1 FROM attempts a WHERE a.round_id=? AND a.question_id=q.id) ORDER BY q.random_key,q.id LIMIT 1`;
+  const q = await db.prepare(select.replace('%COMPARE%', '>=' )).bind(collection, collection, Number(favoriteOnly), round.start_key, round.id).first<DbQuestion>()
+    ?? await db.prepare(select.replace('%COMPARE%', '<')).bind(collection, collection, Number(favoriteOnly), round.start_key, round.id).first<DbQuestion>();
+  if (q) await db.prepare(`INSERT OR IGNORE INTO attempts(id,round_id,question_id,question_text,reading,answer,aliases,category,note,source,collection,majorCategory,minorCategory,retryAliases) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? FROM questions q WHERE id=? AND deleted_at IS NULL AND hidden=0 AND collection=? AND (?=0 OR EXISTS(SELECT 1 FROM favorites f WHERE f.question_id=q.id)) AND EXISTS(SELECT 1 FROM rounds WHERE id=? AND invalidated=0)`)
+    .bind(crypto.randomUUID(), round.id, q.id, q.text, q.reading, q.answer, q.aliases, q.category, q.note, q.source, q.collection, q.majorCategory, q.minorCategory, q.retryAliases, q.id, q.collection, Number(favoriteOnly), round.id).run();
   await db.prepare('UPDATE settings SET last_practice_round=? WHERE id=1').bind(round.id).run();
-  return c.json(await getPractice(db, collection));
+  return c.json(await getPractice(db, collection, favoriteOnly));
 });
 async function attemptScope(db: D1Database, roundId: number) {
-  return (await db.prepare('SELECT collection FROM rounds WHERE id=?').bind(roundId).first<{ collection: string | null }>())?.collection ?? null;
+  const scope = await db.prepare('SELECT collection,favorite_only FROM rounds WHERE id=?').bind(roundId).first<{ collection: string | null; favorite_only: number }>();
+  return getPractice(db, scope?.collection ?? null, Boolean(scope?.favorite_only));
 }
 app.post('/api/attempts/:id/answer', async c => {
   const { answer, skip } = z.object({ answer: z.string().trim().max(500).default(''), skip: z.boolean().default(false) }).parse(await c.req.json());
@@ -298,18 +299,18 @@ app.post('/api/attempts/:id/answer', async c => {
   const judgment = skip ? 'incorrect' : judgeAnswer(answer, { answer: row.answer, aliases: JSON.parse(row.aliases), retryAliases: JSON.parse(row.retryAliases) });
   if (judgment === 'retry') {
     await c.env.DB.prepare('UPDATE attempts SET retry_requested=1 WHERE id=? AND answered_at IS NULL AND cancelled=0').bind(row.id).run();
-    return c.json(await getPractice(c.env.DB, await attemptScope(c.env.DB, row.round_id)));
+    return c.json(await attemptScope(c.env.DB, row.round_id));
   }
   const correct = judgment === 'correct';
   await c.env.DB.prepare(`UPDATE attempts SET retry_requested=0,submitted_answer=?,correct=?,skipped=?,answered_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=? AND answered_at IS NULL AND cancelled=0`)
     .bind(answer, correct ? 1 : 0, skip ? 1 : 0, row.id).run();
-  return c.json(await getPractice(c.env.DB, await attemptScope(c.env.DB, row.round_id)));
+  return c.json(await attemptScope(c.env.DB, row.round_id));
 });
 app.post('/api/attempts/:id/override', async c => {
   const row = await c.env.DB.prepare('SELECT round_id FROM attempts WHERE id=?').bind(c.req.param('id')).first<{ round_id: number }>();
   if (!row) return c.json({ error: '出題が見つかりません。' }, 404);
   await c.env.DB.prepare('UPDATE attempts SET correct=1,overridden=1 WHERE id=? AND answered_at IS NOT NULL AND cancelled=0 AND skipped=0 AND correct=0').bind(c.req.param('id')).run();
-  return c.json(await getPractice(c.env.DB, await attemptScope(c.env.DB, row.round_id)));
+  return c.json(await attemptScope(c.env.DB, row.round_id));
 });
 app.get('/api/history', async c => {
   const page = Math.max(1, Math.min(1000000, Number(c.req.query('page')) || 1));
