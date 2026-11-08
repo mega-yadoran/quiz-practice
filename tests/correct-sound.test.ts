@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { PracticeAttempt } from '../shared/model';
 import { isNewCorrectResult, playCorrectAnswer } from '../src/speech';
 
-const pending: PracticeAttempt = { id: 'attempt-1', questionId: 'q1', text: '問題', reading: '', category: '', collection: '', majorCategory: '', minorCategory: '', retryRequested: false, answered: false, favorite: false };
+const pending: PracticeAttempt = { id: 'attempt-1', questionId: 'q1', text: '問題', reading: '', category: '', collection: '', majorCategory: '', minorCategory: '', retryRequested: false, answered: false, hidden: false, favorite: false };
 const correct = { ...pending, answered: true, correct: true, skipped: false };
 
 describe('正解音を鳴らすタイミング', () => {

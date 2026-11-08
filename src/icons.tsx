@@ -15,6 +15,7 @@ const paths: Record<string, string> = {
   close: 'm6 6 12 12M6 18 18 6',
   check: 'm5 12 4 4L19 6',
   edit: 'm15 4 5 5M4 20l5-1L21 7l-5-5L4 14Z',
+  mute: 'M3 9h4l5-5v16l-5-5H3ZM16 9l5 6M21 9l-5 6',
   volume: 'M3 9h4l5-5v16l-5-5H3ZM16 8a6 6 0 0 1 0 8M19 4a11 11 0 0 1 0 16',
   shield: 'M12 3 3 6v6c0 5 9 9 9 9s9-4 9-9V6ZM8 12l3 3 5-6',
 };

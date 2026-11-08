@@ -64,3 +64,5 @@
 .picker-note { font-size: 12px; margin-top: 24px; }
 .picker-back { display: inline-block; margin-bottom: 20px; }
 @media (max-width: 600px) { .practice-picker { padding: 20px 16px; } .practice-choice { padding: 18px 14px; } }
+
+.hidden-badge{display:inline-flex;align-items:center;border-radius:5px;padding:3px 8px;background:#ecefe8;color:#596752;font-size:11px;font-weight:500;white-space:nowrap}.row-meta{flex-wrap:wrap}.row-meta .hidden-badge{color:#596752}.visibility-actions{margin:16px 0}.visibility-actions p{font-size:12px;line-height:1.9;color:#65765b}.visibility-actions .button{width:100%;white-space:normal}.question-row-actions{display:flex;align-items:center;gap:2px;flex-shrink:0}.question-row-actions .icon-button{display:grid;place-items:center;min-width:40px;min-height:44px}.visibility-toggle.is-hidden{color:#8b632d;background:#f4ebdc}.visibility-toggle.is-hidden:hover{background:#eee0c9}.history-row .hidden-badge{margin-bottom:8px}
