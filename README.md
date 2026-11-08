@@ -12,6 +12,7 @@
 | [実装メモ](docs/ARCHITECTURE.md) | 構成・データモデル・変更時に維持する動作 |
 | [CI/CD](docs/CI-CD.md) | 自動テスト・マイグレーション・公開・復旧 |
 | [確認結果](docs/VERIFICATION.md) | 動作確認の範囲と実行記録 |
+| [作問ガイド](docs/QUESTION_AUTHORING.md) | 問題収集・作成・添削の基準、abc本戦の分析、別解の設計 |
 | [AGENTS.md](AGENTS.md) | 別チャット・エージェント向けの読む順番と作業上の注意 |
 
 ## できること
