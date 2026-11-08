@@ -99,7 +99,9 @@ try {
   assert.equal(stats.answered, 2);
   assert.equal(stats.correct, 2);
   assert.equal(stats.skipped, 1);
-  assert.equal((await request('/history')).total, 3);
+  const history = await request('/history');
+  assert.equal(history.total, 3);
+  assert.ok(history.history.every(row => Array.isArray(row.aliases) && row.aliases.includes('えーびーしー')), '履歴に出題時点の別解を返す');
   assert.equal((await request('/questions?search=%25')).total, 0, '検索の%をワイルドカードにしない');
   assert.equal((await request('/import/preview', 'POST', questions)).updated, 3);
   const next = await request('/practice/next', 'POST', { newRound: true });

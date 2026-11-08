@@ -315,10 +315,10 @@ app.post('/api/attempts/:id/override', async c => {
 app.get('/api/history', async c => {
   const page = Math.max(1, Math.min(1000000, Number(c.req.query('page')) || 1));
   const [rows, total] = await Promise.all([
-    c.env.DB.prepare(`SELECT id,question_id,question_text,answer,submitted_answer,correct,overridden,skipped,answered_at,(SELECT hidden FROM questions WHERE questions.id=attempts.question_id) hidden FROM attempts WHERE answered_at IS NOT NULL AND cancelled=0 ORDER BY answered_at DESC,rowid DESC LIMIT 20 OFFSET ?`).bind((page - 1) * 20).all(),
+    c.env.DB.prepare(`SELECT id,question_id,question_text,answer,aliases,submitted_answer,correct,overridden,skipped,answered_at,(SELECT hidden FROM questions WHERE questions.id=attempts.question_id) hidden FROM attempts WHERE answered_at IS NOT NULL AND cancelled=0 ORDER BY answered_at DESC,rowid DESC LIMIT 20 OFFSET ?`).bind((page - 1) * 20).all<Record<string, unknown>>(),
     c.env.DB.prepare('SELECT COUNT(*) total FROM attempts WHERE answered_at IS NOT NULL AND cancelled=0').first<{ total: number }>(),
   ]);
-  return c.json({ history: rows.results, total: total?.total ?? 0, page });
+  return c.json({ history: rows.results.map(row => ({ ...row, aliases: JSON.parse(row.aliases as string) })), total: total?.total ?? 0, page });
 });
 app.get('/api/settings', async c => {
   const row = await c.env.DB.prepare('SELECT * FROM settings WHERE id=1').first<{ rate: number; show_question: number }>();
