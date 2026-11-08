@@ -71,6 +71,14 @@ Workersの既存`single-page-application`設定で深いURLにもindex.htmlを�
 
 画面の`PracticeEntry`は`play=1`の有無で選択／練習を切り替え、範囲ごとにPracticeを再生成して前の音声を停止する。問題集名はURLエンコードし、空文字と全体を区別する。D1には送信前の回答文字列や音声再生段階を保存しない。
 
+## 出題対象の非表示
+
+0005_question_visibility.sqlはquestions.hidden（既定0・0/1制約）と、非表示を除く全体／問題集別の乱数順部分索引を追加する。既存問題は出題対象のまま移行する。PUT /api/questions/:id/visibilityはshared/visibility.tsでbooleanを検証し、削除されていない問題だけ更新する。通常の問題保存・CSV upsertはhiddenを変更しない。
+
+非表示トリガーは対象問題の未回答attemptsだけを中止する。回答済みの結果を表示し続けるため、一巡は無効化しない。出題候補・次の出題INSERT・件数・進捗からhidden=1を除外し、getPracticeの直前結果だけは回答済みの非表示問題も返す。再表示トリガーは全体と所属問題集の一巡を無効化し、対象の未回答を中止する。これにより一巡内ID一意制約を保ったまま、以前に中止・回答した問題も新しい一巡で出題できる。同じ設定の再送はトリガーを発火させない。
+
+問題一覧はbooleanのhidden、履歴は現在のquestions.hiddenを参照してバッジを返す。attemptsの文章・答え・正誤のスナップショットは変更しない。非表示はお気に入り・管理件数・成績・CSV対象を減らさず、全データJSONにはquestionsのhiddenを保存する。
+
 ## 問題登録・判定
 
 - CSVはブラウザで解析してプレビューするが、APIでもZodによる検証を行う。

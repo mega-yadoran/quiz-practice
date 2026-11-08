@@ -15,7 +15,7 @@ export const questionSchema = z.object({
   note: z.string().trim().max(4000).default(''),
 });
 export type Question = z.infer<typeof questionSchema>;
-export type QuestionRow = Question & { favorite: boolean; created_at: string; updated_at: string };
+export type QuestionRow = Question & { hidden: boolean; favorite: boolean; created_at: string; updated_at: string };
 
 // Preserve internal spaces, punctuation and kana differences unless explicitly registered.
 export function normalizeAnswer(value: string): string {
@@ -42,6 +42,7 @@ export interface PracticeAttempt {
   minorCategory: string;
   retryRequested: boolean;
   answered: boolean;
+  hidden: boolean;
   favorite: boolean;
   answer?: string;
   aliases?: string[];

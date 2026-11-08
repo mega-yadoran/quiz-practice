@@ -230,6 +230,72 @@ try {
   const invalidScope = await fetch(base + '/api/practice/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection: 123 }) });
   assert.equal(invalidScope.status, 400);
   assert.equal((await startScope('存在しない問題集')).total, 0);
+  // Visibility is independent of content/imports/favorites and preserves completed history.
+  const visibilityBook = '非表示テスト';
+  const visibleFixtures = [
+    { id: 'visibility-a', text: '非表示の確認A', answer: 'A', collection: visibilityBook },
+    { id: 'visibility-b', text: '非表示の確認B', answer: 'A', collection: visibilityBook },
+  ];
+  await request('/import', 'POST', visibleFixtures);
+  const hide = (id, hidden) => request('/questions/' + id + '/visibility', 'PUT', { hidden });
+  const firstVisible = await startScope(visibilityBook);
+  const hiddenId = firstVisible.attempt.questionId;
+  await request('/favorites/' + hiddenId, 'PUT', { favorite: true });
+  const visibilityResult = await request('/attempts/' + firstVisible.attempt.id + '/answer', 'POST', { answer: 'wrong' });
+  const beforeHide = await request('/stats');
+  const historySize = (await request('/history')).total;
+  await hide(hiddenId, true);
+  await hide(hiddenId, true); // Idempotent repeat.
+  const hiddenResult = await request(scopeUrl(visibilityBook));
+  assert.equal(hiddenResult.attempt.id, visibilityResult.attempt.id, '非表示後も直前の結果を確認可能');
+  assert.equal(hiddenResult.attempt.hidden, true);
+  assert.equal(hiddenResult.total, 1);
+  assert.equal(hiddenResult.seen, 0);
+  const overriddenHidden = await request('/attempts/' + firstVisible.attempt.id + '/override', 'POST', {});
+  assert.equal(overriddenHidden.attempt.correct, true, '非表示後も正解扱いに変更可能');
+  const hiddenQuestion = await request('/questions/' + hiddenId);
+  assert.equal(hiddenQuestion.hidden, true);
+  assert.equal((await request('/questions?collection=' + encodeURIComponent(visibilityBook))).total, 2);
+  assert.ok((await request('/questions?favorite=1')).questions.some(q => q.id === hiddenId && q.hidden && q.favorite));
+  assert.ok((await request('/history')).history.some(h => h.question_id === hiddenId && h.hidden));
+  assert.equal((await request('/history')).total, historySize);
+  assert.equal((await request('/stats')).answered, beforeHide.answered);
+  assert.equal((await request('/stats')).total, beforeHide.total);
+  await request('/import', 'POST', visibleFixtures);
+  assert.equal((await request('/questions/' + hiddenId)).hidden, true, 'CSV再取り込みでも非表示を保持');
+  await request('/questions/' + hiddenId, 'PUT', visibleFixtures.find(q => q.id === hiddenId));
+  assert.equal((await request('/questions/' + hiddenId)).hidden, true, '本文編集でも非表示を保持');
+  assert.equal((await request('/export')).questions.find(q => q.id === hiddenId).hidden, 1);
+  const afterHideOptions = await request('/practice/options');
+  assert.equal(afterHideOptions.collections.find(c => c.name === visibilityBook).total, 1);
+  assert.equal(afterHideOptions.total, beforeHide.total - 1);
+  const onlyVisible = await startScope(visibilityBook);
+  assert.notEqual(onlyVisible.attempt.questionId, hiddenId);
+  await hide(onlyVisible.attempt.questionId, true);
+  const noVisible = await startScope(visibilityBook);
+  assert.equal(noVisible.total, 0);
+  assert.equal(noVisible.attempt?.answered ?? true, true, '非表示の未回答は再開しない');
+  const staleHidden = await fetch(base + '/api/attempts/' + onlyVisible.attempt.id + '/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: 'A' }) });
+  assert.equal(staleHidden.status, 409);
+  const allWithoutHidden = await startScope(null);
+  assert.ok(!visibleFixtures.some(q => q.id === allWithoutHidden.attempt?.questionId), '全問題集でも除外');
+  // Restoring resets only the affected scopes; the formerly cancelled ID can be issued again.
+  const untouched = await startScope('');
+  await hide(onlyVisible.attempt.questionId, false);
+  assert.equal((await request(scopeUrl(''))).attempt.id, untouched.attempt.id);
+  const restoredVisibility = await startScope(visibilityBook);
+  assert.equal(restoredVisibility.total, 1);
+  assert.equal(restoredVisibility.attempt.questionId, onlyVisible.attempt.questionId);
+  assert.equal(restoredVisibility.attempt.hidden, false);
+  await hide(hiddenId, false);
+  assert.ok((await request('/history')).history.filter(h => h.question_id === hiddenId).every(h => !h.hidden));
+  await hide(hiddenId, false); // Repeated restoration must not invalidate a running round.
+  const concurrentVisibility = await Promise.all(Array.from({ length: 5 }, () => startScope(visibilityBook)));
+  assert.equal(new Set(concurrentVisibility.map(s => s.attempt.id)).size, 1);
+  const invalidHidden = await fetch(base + '/api/questions/' + hiddenId + '/visibility', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden: 'true' }) });
+  assert.equal(invalidHidden.status, 400);
+  const missingVisibility = await fetch(base + '/api/questions/missing/visibility', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hidden: true }) });
+  assert.equal(missingVisibility.status, 404);
   console.log('PASS: D1実機互換テスト — 取り込み・更新・出題の同時操作・一巡・再開・判定・お気に入り・履歴・設定・書き出し');
 } catch (error) {
   console.error(logs);
