@@ -2,9 +2,9 @@ import { z } from 'zod';
 
 // null is all collections; the empty string is the unclassified collection.
 export const practiceScopeSchema = z.string().trim().max(100).nullable().default(null);
-export const practiceNextSchema = z.object({ collection: practiceScopeSchema, newRound: z.boolean().default(false) });
+export const practiceNextSchema = z.object({ collection: practiceScopeSchema, favoriteOnly: z.boolean().default(false), newRound: z.boolean().default(false) });
 export interface PracticeOptions {
-  last: { collection: string | null; total: number; progress: number } | null;
+  last: { favoriteOnly: boolean; collection: string | null; total: number; progress: number } | null;
   collections: { name: string; total: number; progress: number }[];
   total: number;
 }

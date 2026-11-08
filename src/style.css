@@ -64,3 +64,41 @@
 .picker-note { font-size: 12px; margin-top: 24px; }
 .picker-back { display: inline-block; margin-bottom: 20px; }
 @media (max-width: 600px) { .practice-picker { padding: 20px 16px; } .practice-choice { padding: 18px 14px; } }
+
+/* Answer controls stay easy to tap on compact screens. */
+.answer-options{display:grid;grid-template-columns:1fr;gap:12px;margin-top:20px}.answer-options .button{width:100%;min-height:56px;padding:15px 12px;font-size:16px}.question-text-toggle{display:flex;margin:20px auto;min-height:48px;font-size:14px}.practice-question{margin:24px 28px;padding:18px;background:#f4f6ef;border-radius:8px;font-size:17px;line-height:1.9;white-space:pre-wrap;overflow-wrap:anywhere}.question-row-body details summary{min-height:44px;padding:10px 0;cursor:pointer}
+
+.question-row .favorite-answer{margin-top:4px}.question-row .favorite-answer p{margin:4px 0;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.question-row .favorite-answer .favorite-correct{margin-top:2px;font-size:18px;color:var(--green)}.favorite-correct span{font-size:12px}.favorite-correct strong{font-weight:600}
+
+/* Keep practice focused on the buzzer and answer controls. */
+.account{margin-top:auto}.sidebar nav{margin-top:36px}.practice-layout{grid-template-columns:minmax(0,1fr)}.practice-layout + .stats-grid{margin-top:24px}.buzzer-area{padding-top:24px}
+
+/* Balanced widths after removing the decorative panels. */
+.content { max-width: 1100px; }
+.practice-session { width: 100%; max-width: 640px; margin: 0 auto; }
+.practice-picker { max-width: 720px; margin: 0 auto; }
+.practice-session .practice-layout { display: block; }
+.practice-session .buzzer-area { padding: 32px 24px 12px; }
+.practice-session .question-text-toggle { margin: 12px auto 24px; }
+.practice-session .answer-form { padding-top: 6px; }
+.practice-session .question-meta { padding: 16px 28px 0; gap: 12px; flex-wrap: wrap; }
+.practice-session .question-meta > span { overflow-wrap: anywhere; }
+.practice-session .round-progress { margin: 16px 28px 24px; padding-top: 16px; }
+.practice-footer { padding: 16px 28px 12px; border-top: 1px solid #edf0e9; background: #fafbf7; }
+.practice-footer .card-top { padding: 0; border: 0; gap: 12px; }
+.practice-footer .section-label { min-width: 0; overflow-wrap: anywhere; }
+.practice-footer .pill { flex-shrink: 0; }
+.practice-footer .picker-back { display: inline-flex; align-items: center; min-height: 44px; margin: 4px 0 0; padding: 8px 0; text-decoration: none; }
+.practice-stats { margin: 20px 0 0; gap: 12px; }
+.practice-stats .stat-card { min-width: 0; padding: 16px; }
+.practice-stats .stat-icon { width: 32px; height: 32px; border-radius: 9px; }
+.practice-stats .stat-card strong { font-size: 28px; }
+@media (max-width: 700px) {
+  .practice-session .buzzer-area { padding: 24px 16px 8px; }
+  .practice-session .question-meta { padding: 14px 21px 0; }
+  .practice-session .round-progress { margin: 14px 21px 20px; padding-top: 14px; }
+  .practice-footer { padding: 16px 21px 8px; }
+  .practice-stats { gap: 8px; margin-top: 16px; }
+  .practice-stats .stat-card { padding: 12px 10px; }
+  .practice-stats .stat-card strong { font-size: 25px; }
+}

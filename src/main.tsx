@@ -57,23 +57,21 @@ function App() {
   const current = pages.find(p => p.id === page) ?? { label: 'ページが見つかりません', en: 'PAGE NOT FOUND', icon: 'book' };
   return <div className="app-shell">
     <aside className="sidebar">
-      <Link className="brand" href="/practice"><span className="brand-mark">Q<span /></span><span>Quiz Practice<small>わたしのクイズ練習帳</small></span></Link>
-      <div className="sidebar-label">MY WORKSPACE</div>
+      <Link className="brand" href="/practice"><span className="brand-mark">Q<span /></span><span>Quiz Practice</span></Link>
+
       <nav aria-label="メインナビゲーション">{pages.map(p => <Link href={'/' + p.id} key={p.id} className={`nav-item ${page === p.id ? 'active' : ''}`} aria-current={page === p.id ? 'page' : undefined}><Icon name={p.icon} /><span>{p.label}</span>{p.id === 'favorites' && !!stats?.favorites && <span className="nav-count">{stats.favorites}</span>}</Link>)}</nav>
-      <div className="sidebar-note"><span className="tiny-line" /><p>ひとつの「知らない」を、<br />ひとつの「わかった」に。</p><small>ONE QUESTION AT A TIME.</small></div>
-      <div className="account"><span className="avatar">Y</span><span>Personal workspace<small title={email}>{email || '接続を確認しています'}</small></span><Icon name="shield" size={16} /></div>
+      <div className="account"><span className="avatar">Y</span><span><small title={email}>{email || '接続を確認しています'}</small></span><Icon name="shield" size={16} /></div>
     </aside>
     <main className="main">
-      <div className="topbar"><span>MY QUIZ NOTEBOOK <span className="topbar-slash">/</span> {current.en}</span><span className="private-badge"><span />自分だけの練習帳</span></div>
       <div className="content">
-        <header className="page-heading"><div><p className="eyebrow">{current.en}</p><h1>{page === 'practice' ? '聴いて、考えて、覚える。' : current.label}</h1><p className="subtitle">{{ practice: '今日も、一問ずつ。自分のペースで知識を積み重ねよう。', questions: '集めた問題を、自分の知識に変えていこう。', favorites: 'もう一度見返したい問題を、ここに。', history: '小さな積み重ねを、振り返ろう。', settings: '心地よく練習するための、自分の設定。', 'not-found': 'メニューから目的の画面を開いてください。' }[page]}</p></div><span className="heading-decoration" aria-hidden="true">{page === 'practice' ? 'Q.' : <Icon name={current.icon} size={44} />}</span></header>
-        {error && <ErrorBox error={error} retry={() => void load()} />}
-        {page === 'not-found' && <Empty title="ページが見つかりません"><p>URLを確認するか、メニューから移動してください。</p><Link className="button primary" href="/practice">練習する</Link></Empty>}
+        {!(page === 'practice' && route.params.get('play') === '1') && <header className="page-heading"><h1>{current.label}</h1></header>}
+
+        {page === 'not-found' && <Empty title="ページが見つかりません"><Link className="button primary" href="/practice">練習する</Link></Empty>}
         {page === 'practice' && <PracticeEntry settings={settings} stats={stats} refresh={refresh} onQuestions={() => navigate('questions')} />}
         {(page === 'questions' || page === 'favorites') && <Library key={page} favoriteOnly={page === 'favorites'} refresh={refresh} />}
         {page === 'history' && <History stats={stats} />}
         {page === 'settings' && <Preferences settings={settings} onSave={s => { setSettings(s); refresh(); }} />}
-        <footer className="page-footer">QUIZ PRACTICE <span>続けるほど、知ることが楽しくなる。</span></footer>
+        {error && <ErrorBox error={error} retry={() => void load()} />}
       </div>
     </main>
     <nav className="mobile-nav" aria-label="モバイルナビゲーション">{pages.map(p => <Link href={'/' + p.id} key={p.id} className={page === p.id ? 'active' : ''} aria-current={page === p.id ? 'page' : undefined}><Icon name={p.icon} size={21} /><span>{p.id === 'questions' ? '問題' : p.id === 'history' ? '記録' : p.id === 'practice' ? '練習' : p.label}</span></Link>)}</nav>
@@ -85,28 +83,30 @@ function PracticeEntry(props: PracticeProps) {
   const route = useRoute();
   const playing = route.params.get('play') === '1';
   const collection = route.params.get('collection');
+  const favoriteOnly = route.params.get('favorite') === '1';
   const [options, setOptions] = useState<PracticeOptions | null>(null);
   const [choosing, setChoosing] = useState(false);
   const [error, setError] = useState('');
   const load = () => { setError(''); void api<PracticeOptions>('/practice/options').then(setOptions).catch(e => setError((e as Error).message)); };
   useEffect(() => { if (!playing) { setOptions(null); setChoosing(false); load(); } }, [playing]);
-  const href = (name: string | null) => '/practice?play=1' + (name === null ? '' : '&collection=' + encodeURIComponent(name));
-  if (playing) return <Practice key={collection === null ? 'all' : 'collection:' + collection} {...props} collection={collection} />;
+  const href = (name: string | null, favorites = false) => '/practice?play=1' + (favorites ? '&favorite=1' : '') + (name === null ? '' : '&collection=' + encodeURIComponent(name));
+  if (playing) return <Practice key={JSON.stringify([collection, favoriteOnly])} {...props} collection={collection} favoriteOnly={favoriteOnly} />;
   return <section className="card practice-picker" aria-label="出題する問題集">
-    <p className="eyebrow">LET’S PRACTICE</p><h2>今日はどの問題集にする？</h2>
-    <p>問題集ごとに進み具合を保存。いつでも続きから練習できます。</p>
+    <h2>出題する問題集</h2>
     {error && <ErrorBox error={error} retry={load} />}
+
+
     {!options ? !error && <Loading /> : <>
-      {options.last ? <Link className="practice-choice resume-choice" href={href(options.last.collection)}><span><strong>前回（{practiceLabel(options.last.collection)}）の続きから</strong><small>{options.last.progress} / {options.last.total} 問 解答済み</small></span><Icon name="arrow" /></Link> : <div className="practice-choice unavailable"><span><strong>前回の続きから</strong><small>まだ続きの練習はありません</small></span></div>}
+      {options.last ? <Link className="practice-choice resume-choice" href={href(options.last.collection, options.last.favoriteOnly)}><span><strong>前回（{options.last.favoriteOnly ? 'お気に入り・' : ''}{practiceLabel(options.last.collection)}）の続きから</strong><small>{options.last.progress} / {options.last.total} 問 解答済み</small></span><Icon name="arrow" /></Link> : <div className="practice-choice unavailable"><span><strong>前回の続きから</strong><small>まだ続きの練習はありません</small></span></div>}
       <Link className="practice-choice" href={href(null)}><span><strong>全ての問題集から出題</strong><small>全 {options.total} 問</small></span><Icon name="arrow" /></Link>
-      <button className="practice-choice" aria-expanded={choosing} onClick={() => setChoosing(v => !v)}><span><strong>出題する問題集を選ぶ</strong><small>問題集ごとの続きから始められます</small></span><Icon name="book" /></button>
+      <button className="practice-choice" aria-expanded={choosing} onClick={() => setChoosing(v => !v)}><span><strong>出題する問題集を選ぶ</strong></span><Icon name="book" /></button>
       {choosing && <div className="practice-collections">{options.collections.map(c => c.total ? <Link key={c.name} className="practice-choice" href={href(c.name)}><span><strong>{practiceLabel(c.name)}</strong><small>{c.progress} / {c.total} 問 解答済み</small></span><Icon name="arrow" /></Link> : <div key={c.name} className="practice-choice unavailable"><span><strong>{practiceLabel(c.name)}</strong><small>問題がありません</small></span></div>)}</div>}
       {!options.total && <button className="button primary" onClick={props.onQuestions}>問題を登録する</button>}
-      <p className="picker-note">問題の追加・削除や所属の変更で、対象の練習は最初からになります。回答済みの履歴・成績は残ります。</p>
+
     </>}
   </section>;
 }
-function Practice({ settings, stats, refresh, onQuestions, collection }: PracticeProps & { collection: string | null }) {
+function Practice({ settings, stats, refresh, onQuestions, collection, favoriteOnly }: PracticeProps & { collection: string | null; favoriteOnly: boolean }) {
   const [state, setState] = useState<PracticeState | null>(null);
   const [stage, setStage] = useState<'ready' | 'reading' | 'answering'>('ready');
   const [answer, setAnswer] = useState('');
@@ -122,6 +122,8 @@ function Practice({ settings, stats, refresh, onQuestions, collection }: Practic
   const autoPlay = useRef(true);
   const pendingCorrect = useRef('');
   const [correctSoundError, setCorrectSoundError] = useState(false);
+  const [showText, setShowText] = useState(false);
+  const pushAudio = useRef<HTMLAudioElement | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const watchdog = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const introCleanup = useRef<(() => void) | undefined>(undefined);
@@ -138,19 +140,19 @@ function Practice({ settings, stats, refresh, onQuestions, collection }: Practic
     if (audioUrl.current) URL.revokeObjectURL(audioUrl.current);
     audioUrl.current = '';
   };
-  const update = (data: PracticeState) => { cancel(); releaseAudio(); autoPlay.current = !data.attempt?.retryRequested; pendingCorrect.current = ''; setCorrectSoundError(false); setPreparedId(''); setPreparing(false); setSpeechError(''); setState(data); setAnswer(''); setStage(data.attempt?.retryRequested ? 'answering' : 'ready'); };
+  const update = (data: PracticeState) => { setShowText(false); pushAudio.current?.pause(); cancel(); releaseAudio(); autoPlay.current = !data.attempt?.retryRequested; pendingCorrect.current = ''; setCorrectSoundError(false); setPreparedId(''); setPreparing(false); setSpeechError(''); setState(data); setAnswer(''); setStage(data.attempt?.retryRequested ? 'answering' : 'ready'); };
   const load = async () => {
     setError('');
     try {
-      let data = await api<PracticeState>('/practice/select', { method: 'POST', body: { collection } });
-      if (!data.attempt && data.total) data = await api<PracticeState>('/practice/next', { method: 'POST', body: { collection } });
+      let data = await api<PracticeState>('/practice/select', { method: 'POST', body: { collection, favoriteOnly } });
+      if (!data.attempt && data.total) data = await api<PracticeState>('/practice/next', { method: 'POST', body: { collection, favoriteOnly } });
       update(data);
     } catch (e) { setError((e as Error).message); }
   };
   useEffect(() => {
     void load();
     void api<SpeechConfig>('/speech/config').then(setSpeechConfig).catch(e => setSpeechError((e as Error).message));
-    return () => { cancel(); releaseAudio(); };
+    return () => { pushAudio.current?.pause(); cancel(); releaseAudio(); };
   }, [cancel]);
   const run = async (fn: () => Promise<void>) => { setBusy(true); setError(''); try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const start = () => {
@@ -253,9 +255,12 @@ function Practice({ settings, stats, refresh, onQuestions, collection }: Practic
   };
   const next = (newRound: boolean) => {
     unlockAudio();
-    void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound, collection } })); refresh(); });
+    void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound, collection, favoriteOnly } })); refresh(); });
   };
   const stop = () => {
+    pushAudio.current ??= new Audio('/audio/push.mp3');
+    pushAudio.current.currentTime = 0; pushAudio.current.playbackRate = 1;
+    void pushAudio.current.play().catch(() => {});
     autoPlay.current = false;
     clearTimeout(stopDelay.current);
     stopDelay.current = setTimeout(() => { stopDelay.current = undefined; cancel(); }, 300);
@@ -275,46 +280,49 @@ function Practice({ settings, stats, refresh, onQuestions, collection }: Practic
       setTimeout(() => input.current?.focus(), 0);
     }
     refresh(); });
-  return <>
-    <div className="stats-grid"><Stat label="登録している問題" value={stats?.total} unit="問" icon="book" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /><Stat label="これまでの正解率" value={stats ? stats.answered ? Math.round(stats.correct / stats.answered * 100) : 0 : undefined} unit="%" icon="check" /></div>
+  return <div className="practice-session">
+
     <div className="practice-layout">
       <section className="card practice-card" aria-label="クイズの練習">
-        <Link className="text-button picker-back" href="/practice">← 問題集を選び直す</Link>
-        <div className="card-top"><span className="section-label"><span className="status-dot" />{practiceLabel(collection)}から出題</span><span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span></div>
-        {error && <ErrorBox error={error} retry={() => void load()} />}
-        {!state ? !error && <Loading /> : !state.total ? <Empty title="最初の問題を登録しよう"><p>CSVの取り込みや手入力で、<br />あなただけの問題集を作れます。</p><button className="button primary" onClick={onQuestions}><Icon name="plus" />問題を登録する</button></Empty> : !a ? <Empty title="一巡おつかれさまでした"><button className="button primary" disabled={busy} onClick={() => next(true)}>次の一巡を始める</button></Empty> : <>
-          <div className="question-meta"><span>QUESTION {String(state.seen).padStart(2, '0')}</span><span>{[a.collection, a.majorCategory, a.minorCategory].filter(Boolean).join(' / ') || a.category || 'クイズ'}</span></div>
+        {!state ? !error && <Loading /> : !state.total ? <Empty title={favoriteOnly ? "お気に入りの問題がありません" : "問題がありません"}><button className="button primary" onClick={onQuestions}>問題を管理する</button></Empty> : !a ? <Empty title="一巡完了"><button className="button primary" disabled={busy} onClick={() => next(true)}>次の一巡を始める</button></Empty> : <>
+
           {answered ? <div className="result" aria-live="polite">
-            <div className={`result-badge ${a.skipped ? 'skipped' : a.correct ? 'correct' : 'incorrect'}`}><Icon name={a.skipped ? 'arrow' : a.correct ? 'check' : 'close'} size={26} />{a.skipped ? '答えを確認しました' : a.correct ? '正解です！' : '次につなげよう'}{a.overridden && <small>正解扱いに変更済み</small>}</div>
+            <div className={`result-badge ${a.skipped ? 'skipped' : a.correct ? 'correct' : 'incorrect'}`}><Icon name={a.skipped ? 'arrow' : a.correct ? 'check' : 'close'} size={26} />{a.skipped ? '答えを確認しました' : a.correct ? '正解です！' : '不正解です'}{a.overridden && <small>正解扱いに変更済み</small>}</div>
             {correctSoundError && <p className="notice" role="status">正解音を再生できませんでした。<button className="text-button" onClick={playCorrectSound}>正解音を再生</button></p>}
             <p className="revealed-question">{a.text}</p><div className="answer-reveal"><span className="eyebrow">ANSWER</span><h2>{a.answer}</h2>{!!a.aliases?.length && <p>別解：{a.aliases.join(' ／ ')}</p>}</div>
             {!a.skipped && <p className="your-answer">あなたの答え：<strong>{a.submittedAnswer}</strong></p>}
             {a.note && <p className="question-note">{a.note}</p>}{a.source && <p className="source">出典・メモ：{a.source}</p>}
             <div className="result-actions"><button className={`button secondary ${a.favorite ? 'is-favorite' : ''}`} disabled={busy} onClick={() => void run(async () => { await api(`/favorites/${a.questionId}`, { method: 'PUT', body: { favorite: !a.favorite } }); setState({ ...state, attempt: { ...a, favorite: !a.favorite } }); refresh(); })}><Icon name="star" fill={a.favorite} />{a.favorite ? 'お気に入り済み' : 'お気に入りに追加'}</button>{!a.correct && !a.skipped && <button className="text-button" disabled={busy} onClick={() => void run(async () => { unlockAudio(); receiveResult(await api(`/attempts/${a.id}/override`, { method: 'POST', body: {} })); refresh(); })}>正解扱いに変更</button>}</div>
-            {state.completed && <div className="round-complete"><strong>すべての問題を一巡しました。</strong><span>よく頑張りました。次の一巡も、自分のペースで。</span></div>}
+            {state.completed && <div className="round-complete"><strong>すべての問題を一巡しました。</strong></div>}
             <button className="button primary wide" disabled={busy} onClick={() => next(state.completed)}>{busy ? '準備しています…' : state.completed ? '次の一巡を始める' : '次の問題へ'}<Icon name="arrow" /></button>
           </div> : <>
-            <div className={`listening-area ${stage === 'reading' ? 'is-reading' : ''}`}>
-              <div className="sound-orbit"><div className="sound-disc">{stage === 'reading' ? <div className="wave" aria-hidden="true">{[1, 2, 3, 4, 5].map(n => <i key={n} />)}</div> : <Icon name="headphones" size={40} />}</div></div>
-              <h2>{stage === 'reading' ? '問題を読み上げています' : stage === 'answering' ? '答えを入力しましょう' : speechError ? '音声を確認してください' : '問題の音声を準備しています'}</h2><p>{stage === 'reading' ? 'わかったところで「解答する」を押してください。' : stage === 'answering' ? 'キーボードのマイクを使えば、声でも入力できます。' : '準備ができると、自動で読み上げが始まります。'}</p>
-              {(settings.showQuestion || stage === 'answering' && speechError === 'text') && <p className="visible-question">{a.text}</p>}
-            </div>
+            {stage === 'reading' && <div className="buzzer-area"><button className="buzzer-button" onClick={stop} aria-label="解答する：読み上げを停止"><span className="buzzer-cap" aria-hidden="true" /></button></div>}
+
+            {(settings.showQuestion || showText || speechError === 'text') && <p className="visible-question practice-question">{a.text}</p>}
+            {!settings.showQuestion && !showText && speechError !== 'text' && <button className="button secondary question-text-toggle" onClick={() => setShowText(true)}>問題文を表示する</button>}
             {speechError && speechError !== 'text' && <p className="notice" role="status">{speechError}</p>}
             {stage === 'ready' && <>
               {preparing && <p className="audio-loading" role="status"><span className="spinner" />音声を読み込んでいます…</p>}
               {speechError && !preparing && <button className="button primary start-button" disabled={busy || !speechConfig} onClick={speechConfig?.provider === 'google' && preparedId !== a.id ? () => { autoPlay.current = true; void prepareSpeech(); } : start}><Icon name="play" size={22} />{speechConfig?.provider === 'google' && preparedId !== a.id ? '音声の準備を再試行' : '音声を再生'}</button>}
               <button className="text-button text-mode" onClick={() => { autoPlay.current = false; cancel(); setPreparing(false); setSpeechError('text'); setStage('answering'); setTimeout(() => input.current?.focus(), 0); }}>文字を見て回答する</button>
             </>}
-            {stage === 'reading' && <div className="buzzer-area"><button className="buzzer-button" onClick={stop} aria-label="解答する：読み上げを停止"><span className="buzzer-cap"><Icon name="stop" size={25} /><strong>解答する</strong><small>早押し！</small></span></button><p>押すと読み上げが止まります</p></div>}
-            {a.retryRequested && <p className="notice" role="status">もう一回。答えを言い直してください。</p>}
-            {stage === 'answering' && <form className="answer-form" onSubmit={e => { e.preventDefault(); void submit(); }}><label htmlFor="answer">あなたの答え</label><div className="answer-input-row"><input ref={input} id="answer" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="答えを入力" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={500} enterKeyHint="done" disabled={busy} /><button className="button primary" type="submit" disabled={busy || !answer.trim()}>判定する<Icon name="arrow" size={18} /></button></div><div className="answer-options"><button className="text-button" type="button" disabled={busy || preparing} onClick={start}><Icon name="volume" size={16} />もう一度聴く</button><button className="text-button" type="button" disabled={busy} onClick={() => void submit(true)}>わからない・正解を見る</button></div></form>}
+
+            {a.retryRequested && <p className="notice" role="status">もう一回</p>}
+            {stage === 'answering' && <form className="answer-form" onSubmit={e => { e.preventDefault(); void submit(); }}><label htmlFor="answer">あなたの答え</label><div className="answer-input-row"><input ref={input} id="answer" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="答えを入力" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={500} enterKeyHint="done" disabled={busy} /><button className="button primary" type="submit" disabled={busy || !answer.trim()}>判定する<Icon name="arrow" size={18} /></button></div><div className="answer-options"><button className="button secondary" type="button" disabled={busy || preparing} onClick={start}><Icon name="volume" size={20} />もう一度聴く</button><button className="button secondary" type="button" disabled={busy} onClick={() => void submit(true)}>わからない・正解を見る</button></div></form>}
           </>}
-          <div className="round-progress"><div><span>今回の進み具合</span><strong>{progress}<span> / {state.total} 問</span></strong></div><progress value={progress} max={state.total || 1} aria-label="今回の進み具合" /><small>一巡するまで、同じ問題は出題されません。</small></div>
+          <div className="question-meta"><span>QUESTION {String(state.seen).padStart(2, '0')}</span><span>{[a.collection, a.majorCategory, a.minorCategory].filter(Boolean).join(' / ') || a.category || 'クイズ'}</span></div>
+          <div className="round-progress"><div><span>今回の進み具合</span><strong>{progress}<span> / {state.total} 問</span></strong></div><progress value={progress} max={state.total || 1} aria-label="今回の進み具合" /></div>
         </>}
+        <div className="practice-footer">
+          <div className="card-top"><span className="section-label"><span className="status-dot" />{favoriteOnly ? 'お気に入り（' + practiceLabel(collection) + '）' : practiceLabel(collection)}から出題</span><span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span></div>
+          <Link className="text-button picker-back" href={favoriteOnly ? "/favorites" : "/practice"}>← {favoriteOnly ? "お気に入りへ戻る" : "問題集を選び直す"}</Link>
+        </div>
+        {error && <ErrorBox error={error} retry={() => void load()} />}
       </section>
-      <aside className="practice-aside"><div className="tip-card"><span className="eyebrow">HOW TO PRACTICE</span><h3>聴くことから、はじめよう。</h3><ol><li><span>01</span><div><strong>問題を聴く</strong><p>問題文は隠れたまま。<br />まずは耳で考えてみよう。</p></div></li><li><span>02</span><div><strong>わかったら、ストップ</strong><p>「解答する」で読み上げを止め、<br />答えを入力します。</p></div></li><li><span>03</span><div><strong>気になる一問を残す</strong><p>判定後にお気に入りへ。<br />あとから何度でも見返せます。</p></div></li></ol></div><div className="memo-card"><Icon name="star" size={22} /><p>すぐに答えが出なくても大丈夫。<br />考えた時間も、学びのひとつ。</p></div></aside>
+
     </div>
-  </>;
+    <div className="stats-grid practice-stats"><Stat label="登録している問題" value={stats?.total} unit="問" icon="book" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /><Stat label="これまでの正解率" value={stats ? stats.answered ? Math.round(stats.correct / stats.answered * 100) : 0 : undefined} unit="%" icon="check" /></div>
+  </div>;
 }
 function Stat({ label, value, unit, icon }: { label: string; value?: number; unit: string; icon: string }) {
   return <div className="stat-card"><div><span>{label}</span><strong>{value === undefined ? '—' : value.toLocaleString()}<small>{unit}</small></strong></div><span className="stat-icon"><Icon name={icon} size={22} /></span></div>;
@@ -367,11 +375,12 @@ function Library({ favoriteOnly, refresh }: { favoriteOnly: boolean; refresh: ()
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   return <>
+    {favoriteOnly && <div className="favorite-practice-start"><Link className="button primary" href={"/practice?play=1&favorite=1" + (collection === "*" ? "" : "&collection=" + encodeURIComponent(collection))}><Icon name="play" />ランダムに出題する</Link></div>}
     <div className="collection-toolbar"><label>問題集<select aria-label="問題集で絞り込み" value={collection} onChange={e => { setCollection(e.target.value); }}><option value="*">すべての問題集</option>{collections.map(c => <option key={c.name} value={c.name}>{c.name || '未分類'}（{c.total}問）</option>)}</select></label>{!favoriteOnly && <button className="button secondary" onClick={() => open('/questions/collections')}><Icon name="book" />問題集を管理</button>}</div>
     <div className="library-toolbar"><label className="search-field"><Icon name="search" /><input aria-label="問題を検索" placeholder="問題文・正解・ジャンル・IDで検索" value={search} onChange={e => { setSearch(e.target.value); }} /></label>{!favoriteOnly && <div className="toolbar-actions"><button className="button secondary" onClick={() => open('/questions/import')}><Icon name="upload" />CSV取り込み</button><button className="button primary" onClick={() => open('/questions/new')}><Icon name="plus" />問題を追加</button></div>}</div>
     {error && <ErrorBox error={error} retry={() => setVersion(v => v + 1)} />}
-    <section className="card library-card"><div className="list-heading"><h2>{favoriteOnly ? 'お気に入りの問題' : 'すべての問題'}<span>{total.toLocaleString()} 問</span></h2><span className="muted">{favoriteOnly ? '見返して、知識を定着させよう' : '20問ずつ表示'}</span></div>
-      {loading ? <Loading /> : !rows.length ? <Empty icon={favoriteOnly ? 'star' : 'book'} title={search ? '一致する問題がありません' : favoriteOnly ? 'お気に入りはまだありません' : '自分だけの問題集を作ろう'}><p>{favoriteOnly ? '練習の判定後や問題一覧の星マークから追加できます。' : '手入力で追加するか、CSVを取り込んで始めましょう。'}</p>{!favoriteOnly && !search && <button className="button secondary" onClick={() => open('/questions/import')}><Icon name="upload" />例題・CSVテンプレートを見る</button>}</Empty> : <div className="question-list">{rows.map(q => <article className="question-row" key={q.id}><button className={`favorite-toggle ${q.favorite ? 'selected' : ''}`} aria-label={q.favorite ? 'お気に入りを解除' : 'お気に入りに追加'} aria-pressed={q.favorite} disabled={busy} onClick={() => void toggle(q)}><Icon name="star" fill={q.favorite} /></button><div className="question-row-body"><div className="row-meta"><span>{[q.collection, q.majorCategory, q.minorCategory].filter(Boolean).join(' / ') || q.category || '未分類'}</span><small>{q.id}</small></div><h3>{q.text}</h3><p><span>正解</span>{q.answer}</p>{!!q.retryAliases.length && <p className="row-extra">もう一回：{q.retryAliases.join(" ／ ")}</p>}{q.note && <details><summary>メモ・別解を見る</summary><p>{q.note}</p>{!!q.aliases.length && <p>別解：{q.aliases.join(' ／ ')}</p>}{q.source && <p>出典：{q.source}</p>}</details>}{!q.note && (!!q.aliases.length || q.source) && <p className="row-extra">{q.aliases.length ? `別解：${q.aliases.join(' ／ ')}` : ''}{q.source ? `　出典：${q.source}` : ''}</p>}</div><button className="icon-button" aria-label={`${q.id}を編集`} onClick={() => open(base + '/' + encodeURIComponent(q.id) + '/edit')}><Icon name="edit" size={19} /></button></article>)}</div>}
+    <section className="card library-card"><div className="list-heading"><h2>{favoriteOnly ? 'お気に入りの問題' : 'すべての問題'}<span>{total.toLocaleString()} 問</span></h2></div>
+      {loading ? <Loading /> : !rows.length ? <Empty icon={favoriteOnly ? 'star' : 'book'} title={search ? '一致する問題がありません' : favoriteOnly ? 'お気に入りはまだありません' : '問題がありません'}>{!favoriteOnly && !search && <button className="button secondary" onClick={() => open('/questions/import')}><Icon name="upload" />例題・CSVテンプレートを見る</button>}</Empty> : <div className="question-list">{rows.map(q => <article className="question-row" key={q.id}><button className={`favorite-toggle ${q.favorite ? 'selected' : ''}`} aria-label={q.favorite ? 'お気に入りを解除' : 'お気に入りに追加'} aria-pressed={q.favorite} disabled={busy} onClick={() => void toggle(q)}><Icon name="star" fill={q.favorite} /></button><div className="question-row-body"><div className="row-meta"><span>{[q.collection, q.majorCategory, q.minorCategory].filter(Boolean).join(' / ') || q.category || '未分類'}</span><small>{q.id}</small></div><h3>{q.text}</h3>{favoriteOnly ? <details className="favorite-answer"><summary>答えを見る</summary><p className="favorite-correct"><span>正解：</span><strong>{q.answer}</strong></p>{!!q.aliases.length && <p>別解：{q.aliases.join(" ／ ")}</p>}{!!q.retryAliases.length && <p>もう一回：{q.retryAliases.join(" ／ ")}</p>}{q.note && <p>メモ：{q.note}</p>}{q.source && <p>出典：{q.source}</p>}</details> : <><p><span>正解</span>{q.answer}</p>{!!q.retryAliases.length && <p className="row-extra">もう一回：{q.retryAliases.join(" ／ ")}</p>}{q.note && <details><summary>メモ・別解を見る</summary><p>{q.note}</p>{!!q.aliases.length && <p>別解：{q.aliases.join(' ／ ')}</p>}{q.source && <p>出典：{q.source}</p>}</details>}{!q.note && (!!q.aliases.length || q.source) && <p className="row-extra">{q.aliases.length ? `別解：${q.aliases.join(' ／ ')}` : ''}{q.source ? `　出典：${q.source}` : ''}</p>}</>}</div><button className="icon-button" aria-label={`${q.id}を編集`} onClick={() => open(base + '/' + encodeURIComponent(q.id) + '/edit')}><Icon name="edit" size={19} /></button></article>)}</div>}
       <Pager page={page} total={total} onChange={setPage} />
     </section>
     {managingCollections && <CollectionsDialog onClose={close} onChanged={() => { updateQuery({ collection: null, page: null }, true); reload(); }} />}
@@ -410,7 +419,7 @@ function CollectionsDialog({ onClose, onChanged }: { onClose: () => void; onChan
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
   const changed = async (text: string) => { setSelection(null); setName(''); setConfirmation(''); setMessage(text); onChanged(); await load(); };
-  return <Modal title={selection?.kind === 'rename' ? '問題集の名前を変更' : selection?.kind === 'delete' ? '問題集を削除' : '問題集を管理'} subtitle="問題集ごとの問題数を確認し、名前の変更や削除ができます。" onClose={() => { if (!busy) onClose(); }}>
+  return <Modal title={selection?.kind === 'rename' ? '問題集の名前を変更' : selection?.kind === 'delete' ? '問題集を削除' : '問題集を管理'} onClose={() => { if (!busy) onClose(); }}>
     {error && <ErrorBox error={error} retry={() => void load()} />}
     {message && <p className="success" role="status">{message}</p>}
     {!selection ? <>
@@ -419,7 +428,7 @@ function CollectionsDialog({ onClose, onChanged }: { onClose: () => void; onChan
         try { await api('/collections', { method: 'POST', body: { name } }); await changed('問題集を作成しました。'); }
         catch (e) { setError((e as Error).message); } finally { setBusy(false); }
       }}><label>新しい問題集名<input required maxLength={100} value={name} disabled={busy} onChange={e => setName(e.target.value)} /></label><button className="button primary" disabled={busy || !name.trim()}>作成する</button></form>
-      {loading ? <Loading /> : <div className="collection-list">{collections.map(item => <article key={item.name} className="collection-row"><div><h3>{item.name || '未分類'}</h3><span>{item.total.toLocaleString()} 問</span></div>{item.name ? <div className="collection-actions"><button className="button small secondary" disabled={busy} onClick={() => void backup(item)}>CSVを保存</button><button className="button small secondary" disabled={busy} onClick={() => { setSelection({ kind: 'rename', item }); setName(item.name); setError(''); setMessage(''); }}>名前を変更</button><button className="button small danger-outline" disabled={busy} onClick={() => { setSelection({ kind: 'delete', item }); setConfirmation(''); setError(''); setMessage(''); }}>削除</button></div> : <p className="small-note">問題集が指定されていない問題です。各問題の編集画面で移動できます。</p>}</article>)}</div>}
+      {loading ? <Loading /> : <div className="collection-list">{collections.map(item => <article key={item.name} className="collection-row"><div><h3>{item.name || '未分類'}</h3><span>{item.total.toLocaleString()} 問</span></div>{item.name ? <div className="collection-actions"><button className="button small secondary" disabled={busy} onClick={() => void backup(item)}>CSVを保存</button><button className="button small secondary" disabled={busy} onClick={() => { setSelection({ kind: 'rename', item }); setName(item.name); setError(''); setMessage(''); }}>名前を変更</button><button className="button small danger-outline" disabled={busy} onClick={() => { setSelection({ kind: 'delete', item }); setConfirmation(''); setError(''); setMessage(''); }}>削除</button></div> : <span className="muted">未分類</span>}</article>)}</div>}
       <div className="modal-actions"><button className="button secondary" disabled={busy} onClick={onClose}>閉じる</button></div>
     </> : selection.kind === 'rename' ? <form className="editor-form" onSubmit={async e => {
       e.preventDefault(); setBusy(true); setError('');
@@ -455,20 +464,20 @@ function QuestionEditor({ question, onClose, onSaved }: { question: Question | n
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const change = (key: keyof Question, value: string) => setQ({ ...q, [key]: value });
-  return <Modal title={question ? '問題を編集' : '新しい問題を追加'} subtitle="別解と読み上げ用の文章は、必要に応じて登録できます。" onClose={() => { if (!busy) onClose(); }}><form className="editor-form" onSubmit={async e => {
+  return <Modal title={question ? '問題を編集' : '新しい問題を追加'} onClose={() => { if (!busy) onClose(); }}><form className="editor-form" onSubmit={async e => {
     e.preventDefault(); setBusy(true); setError('');
     try { await api(question ? `/questions/${encodeURIComponent(q.id)}` : '/questions', { method: question ? 'PUT' : 'POST', body: { ...q, retryAliases: retryAliases.split('\n').map(s => s.trim()).filter(Boolean), aliases: aliases.split('\n').map(s => s.trim()).filter(Boolean) } }); onSaved(); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }}>
     {error && <ErrorBox error={error} />}
     <label>問題ID <span className="required">必須</span><input required maxLength={100} value={q.id} disabled={!!question || busy} onChange={e => change('id', e.target.value)} /><small>CSVでの再取り込みにも使う固定IDです。</small></label>
-    <label>問題集<input list="collection-names" maxLength={100} value={q.collection} onChange={e => change('collection', e.target.value)} placeholder="例：abc本戦" /><datalist id="collection-names">{collections.filter(c => c.name).map(c => <option key={c.name} value={c.name} />)}</datalist><small>新しい名前を入力すると問題集も作成します。</small></label>
+    <label>問題集<input list="collection-names" maxLength={100} value={q.collection} onChange={e => change('collection', e.target.value)} placeholder="例：abc本戦" /><datalist id="collection-names">{collections.filter(c => c.name).map(c => <option key={c.name} value={c.name} />)}</datalist></label>
     <div className="form-columns"><label>大ジャンル<input maxLength={100} value={q.majorCategory} onChange={e => change('majorCategory', e.target.value)} /></label><label>小ジャンル<input maxLength={100} value={q.minorCategory} onChange={e => change('minorCategory', e.target.value)} /></label></div>
     <label>問題文 <span className="required">必須</span><textarea required maxLength={4000} rows={3} value={q.text} onChange={e => change('text', e.target.value)} placeholder="例：日本で最も高い山は何でしょう？" /></label>
     <div className="form-columns"><label>正解 <span className="required">必須</span><input required maxLength={300} value={q.answer} onChange={e => change('answer', e.target.value)} placeholder="例：富士山" /></label><label>分野<input maxLength={100} value={q.category} onChange={e => change('category', e.target.value)} placeholder="例：地理" /></label></div>
     <label>正解として認める別表記<textarea rows={2} value={aliases} onChange={e => setAliases(e.target.value)} placeholder={'ふじさん\nフジサン'} /><small>1行に1つずつ。ひらがな・カタカナの違いは自動では吸収しません。</small></label>
     <label>「もう一回」と聞き直す答え（△）<textarea rows={2} value={retryAliases} onChange={e => setRetryAliases(e.target.value)} /><small>1行に1つずつ。正誤を確定せず、同じ問題に再回答します。</small></label>
-    <details className="advanced"><summary>読み上げ・出典・メモを設定</summary><label>読み上げ用の問題文<textarea rows={3} maxLength={4000} value={q.reading} onChange={e => change('reading', e.target.value)} /><small>空欄の場合は、通常の問題文を読み上げます。</small></label><label>出典<input maxLength={1000} value={q.source} onChange={e => change('source', e.target.value)} /></label><label>メモ・解説<textarea rows={3} maxLength={4000} value={q.note} onChange={e => change('note', e.target.value)} /></label></details>
+    <details className="advanced"><summary>読み上げ・出典・メモを設定</summary><label>読み上げ用の問題文<textarea rows={3} maxLength={4000} value={q.reading} onChange={e => change('reading', e.target.value)} /></label><label>出典<input maxLength={1000} value={q.source} onChange={e => change('source', e.target.value)} /></label><label>メモ・解説<textarea rows={3} maxLength={4000} value={q.note} onChange={e => change('note', e.target.value)} /></label></details>
     <div className="modal-actions"><button className="button secondary" type="button" disabled={busy} onClick={onClose}>キャンセル</button><button className="button primary" disabled={busy}>{busy ? '保存しています…' : '保存する'}</button></div>
   </form></Modal>;
 }
@@ -496,7 +505,7 @@ function ImportDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () =
     catch (e) { setErrors([(e as Error).message]); } finally { setBusy(false); }
   };
   return <Modal title="CSVから問題を取り込む" subtitle="1ファイル10000問まで。200問ずつ登録します。文字コードはUTF-8で保存してください。" onClose={() => { if (!busy) onClose(); }}>
-    <div className="import-help"><p><strong>まずはテンプレートから。</strong> 別解は「|」で区切ります。取り込み前に内容を確認できます。</p><div className="inline-actions"><button className="text-button" onClick={() => download('quiz-template.csv', questionsCsv(sampleQuestions), 'text/csv;charset=utf-8')}><Icon name="download" size={16} />例題付きテンプレート</button><button className="text-button" disabled={busy} onClick={() => { setCsvText(''); setFileName('動作確認用の例題（5問）'); setQuestions(sampleQuestions); setErrors([]); void prepare(sampleQuestions); }}>例題5問で試す</button></div></div>
+    <div className="import-help"><p>別解は「|」で区切ります。取り込み前に内容を確認できます。</p><div className="inline-actions"><button className="text-button" onClick={() => download('quiz-template.csv', questionsCsv(sampleQuestions), 'text/csv;charset=utf-8')}><Icon name="download" size={16} />例題付きテンプレート</button><button className="text-button" disabled={busy} onClick={() => { setCsvText(''); setFileName('動作確認用の例題（5問）'); setQuestions(sampleQuestions); setErrors([]); void prepare(sampleQuestions); }}>例題5問で試す</button></div></div>
     <label className="import-collection">取り込み先の問題集<input maxLength={100} value={collection} disabled={busy} onChange={e => {
       const name = e.target.value; setCollection(name); setPreview(null); setConfirmed(false);
       if (csvText) { const result = parseQuestionsCsv(csvText, { collection: name }); setQuestions(result.questions); setErrors(result.errors); }
@@ -539,7 +548,7 @@ function History({ stats }: { stats: Stats | null }) {
     api<{ history: HistoryRow[]; total: number }>(`/history?page=${page}`).then(data => { if (active) { setRows(data.history); setTotal(data.total); } }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [page, version]);
-  return <><div className="stats-grid"><Stat label="これまでの解答" value={stats?.answered} unit="問" icon="book" /><Stat label="正解した回数" value={stats?.correct} unit="問" icon="check" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /></div><section className="card"><div className="list-heading"><h2>これまでの練習<span>{total} 件</span></h2></div>{error && <ErrorBox error={error} retry={() => setVersion(v => v + 1)} />}{loading ? <Loading /> : !rows.length ? <Empty icon="history" title="最初の一問を、ここから。"><p>練習すると、回答と正誤がここに記録されます。</p></Empty> : <div className="history-list">{rows.map(r => <article key={r.id} className="history-row"><span className={`history-symbol ${r.skipped ? 'skipped' : r.correct ? 'correct' : 'incorrect'}`} aria-label={r.skipped ? 'スキップ' : r.correct ? '正解' : '不正解'}><Icon name={r.skipped ? 'arrow' : r.correct ? 'check' : 'close'} /></span><div><time>{new Date(r.answered_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time><h3>{r.question_text}</h3><p>正解：<strong>{r.answer}</strong><span className="history-submission">{r.skipped ? '正解を確認（正解率の集計対象外）' : `あなたの答え：${r.submitted_answer}`}</span></p>{!!r.overridden && <small>自分で正解扱いに変更</small>}</div></article>)}</div>}<Pager page={page} total={total} onChange={setPage} /></section></>;
+  return <><div className="stats-grid"><Stat label="これまでの解答" value={stats?.answered} unit="問" icon="book" /><Stat label="正解した回数" value={stats?.correct} unit="問" icon="check" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /></div><section className="card"><div className="list-heading"><h2>これまでの練習<span>{total} 件</span></h2></div>{error && <ErrorBox error={error} retry={() => setVersion(v => v + 1)} />}{loading ? <Loading /> : !rows.length ? <Empty icon="history" title="解答履歴はありません"></Empty> : <div className="history-list">{rows.map(r => <article key={r.id} className="history-row"><span className={`history-symbol ${r.skipped ? 'skipped' : r.correct ? 'correct' : 'incorrect'}`} aria-label={r.skipped ? 'スキップ' : r.correct ? '正解' : '不正解'}><Icon name={r.skipped ? 'arrow' : r.correct ? 'check' : 'close'} /></span><div><time>{new Date(r.answered_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</time><h3>{r.question_text}</h3><p>正解：<strong>{r.answer}</strong><span className="history-submission">{r.skipped ? '正解を確認（正解率の集計対象外）' : `あなたの答え：${r.submitted_answer}`}</span></p>{!!r.overridden && <small>自分で正解扱いに変更</small>}</div></article>)}</div>}<Pager page={page} total={total} onChange={setPage} /></section></>;
 }
 
 function Preferences({ settings, onSave }: { settings: Settings; onSave: (s: Settings) => void }) {
@@ -557,7 +566,7 @@ function Preferences({ settings, onSave }: { settings: Settings; onSave: (s: Set
       setMessage(csv ? '問題のCSVを書き出しました。再取り込みにも使えます。' : '問題・お気に入り・履歴・進み具合・設定をJSONに書き出しました。');
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   };
-  return <div className="settings-grid"><section className="card settings-card"><div className="section-label"><Icon name="volume" />練習の設定</div><form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); setMessage(''); try { const s = await api<Settings>('/settings', { method: 'PUT', body: draft }); onSave(s); setMessage('設定を保存しました。'); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><label className="range-label">読み上げ速度<strong>{draft.rate.toFixed(1)} 倍</strong><input type="range" min="0.5" max="2" step="0.1" value={draft.rate} onChange={e => setDraft({ ...draft, rate: Number(e.target.value) })} /></label><div className="range-markers"><span>ゆっくり</span><span>はやく</span></div><label className="toggle-label"><div><strong>問題文を常に表示</strong><p>オフの場合は、判定後に全文を表示します。</p></div><input type="checkbox" role="switch" checked={draft.showQuestion} onChange={e => setDraft({ ...draft, showQuestion: e.target.checked })} /></label><p className="muted">設定はiPhoneとPCで共有されます。</p><button className="button primary" disabled={busy}>{busy ? '処理しています…' : '設定を保存'}</button></form></section><section className="card settings-card"><div className="section-label"><Icon name="download" />データの書き出し</div><h3>大切な問題を、手元にも。</h3><p className="muted">定期的な書き出しがおすすめです。CSVは問題の再取り込み用、JSONは履歴なども含めたデータの保管用です。</p><div className="export-actions"><button className="button secondary" disabled={busy} onClick={() => void backup(true)}><Icon name="download" />問題をCSVで保存</button><button className="button secondary" disabled={busy} onClick={() => void backup(false)}><Icon name="download" />全データをJSONで保存</button></div><p className="small-note">JSONからの一括復元画面は初版の対象外です。完全な復元用バックアップの作成手順はREADMEに記載しています。</p></section>{error && <ErrorBox error={error} />}{message && <div className="success" role="status"><Icon name="check" />{message}</div>}<section className="card settings-card full-width"><div className="section-label"><Icon name="headphones" />音声入力について</div><p>回答欄をタップし、iPhoneのキーボードにあるマイクから話すと、声で答えを入力できます。文字を確認して「判定する」を押してください。</p><p className="muted">固有名詞の誤変換などで不正解になった場合は、判定後に「正解扱いに変更」できます。アプリ専用の音声回答モードは今後追加する予定です。</p></section></div>;
+  return <div className="settings-grid"><section className="card settings-card"><div className="section-label"><Icon name="volume" />練習の設定</div><form onSubmit={async e => { e.preventDefault(); setBusy(true); setError(''); setMessage(''); try { const s = await api<Settings>('/settings', { method: 'PUT', body: draft }); onSave(s); setMessage('設定を保存しました。'); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }}><label className="range-label">読み上げ速度<strong>{draft.rate.toFixed(1)} 倍</strong><input type="range" min="0.5" max="2" step="0.1" value={draft.rate} onChange={e => setDraft({ ...draft, rate: Number(e.target.value) })} /></label><div className="range-markers"><span>ゆっくり</span><span>はやく</span></div><label className="toggle-label"><div><strong>問題文を常に表示</strong></div><input type="checkbox" role="switch" checked={draft.showQuestion} onChange={e => setDraft({ ...draft, showQuestion: e.target.checked })} /></label><button className="button primary" disabled={busy}>{busy ? '処理しています…' : '設定を保存'}</button></form></section><section className="card settings-card"><div className="section-label"><Icon name="download" />データの書き出し</div><div className="export-actions"><button className="button secondary" disabled={busy} onClick={() => void backup(true)}><Icon name="download" />問題をCSVで保存</button><button className="button secondary" disabled={busy} onClick={() => void backup(false)}><Icon name="download" />全データをJSONで保存</button></div><p className="small-note">JSONからの一括復元画面は初版の対象外です。完全な復元用バックアップの作成手順はREADMEに記載しています。</p></section>{error && <ErrorBox error={error} />}{message && <div className="success" role="status"><Icon name="check" />{message}</div>}</div>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
