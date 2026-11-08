@@ -170,6 +170,66 @@ try {
   }
   assert.equal((await request('/practice/next', 'POST', { newRound: true })).total, 0);
   assert.equal((await request('/history')).total, historyBeforeDelete.total);
+  // Independent scopes, including unclassified and names that are not URL-safe.
+  const book = '選択 / & ? の本';
+  const fixtures = [
+    { id: 'scope-a', text: 'A', answer: 'A', retryAliases: ['△'], collection: book },
+    { id: 'scope-b', text: 'B', answer: 'A', retryAliases: ['△'], collection: book },
+    { id: 'scope-other', text: 'Other', answer: 'A', collection: '*' },
+    { id: 'scope-empty', text: 'Unclassified', answer: 'A', collection: '' },
+  ];
+  await request('/import', 'POST', fixtures);
+  const scopeUrl = name => '/practice?collection=' + encodeURIComponent(name);
+  const startScope = collection => request('/practice/next', 'POST', { collection });
+  const scoped = await Promise.all(Array.from({ length: 5 }, () => startScope(book)));
+  assert.equal(new Set(scoped.map(s => s.attempt.id)).size, 1);
+  let inBook = scoped[0];
+  assert.equal(inBook.total, 2);
+  assert.equal(inBook.round, 1);
+  assert.equal(inBook.attempt.collection, book);
+  const inAll = await startScope(null);
+  const inOther = await startScope('*');
+  const unclassified = await startScope('');
+  assert.equal(unclassified.total, 1);
+  assert.equal(unclassified.attempt.questionId, 'scope-empty');
+  assert.equal(inOther.total, 1);
+  assert.equal((await request(scopeUrl(book))).attempt.id, inBook.attempt.id);
+  assert.equal((await request('/practice')).attempt.id, inAll.attempt.id);
+  inBook = await request(`/attempts/${inBook.attempt.id}/answer`, 'POST', { answer: '△' });
+  assert.equal(inBook.attempt.retryRequested, true, '別の問題集を開いた後も元の範囲の結果を返す');
+  assert.equal((await request(scopeUrl(book))).attempt.retryRequested, true);
+  // Content edits keep the issued snapshot and progress.
+  await request('/questions/' + inBook.attempt.questionId, 'PUT', { ...fixtures.find(q => q.id === inBook.attempt.questionId), answer: 'edited' });
+  const finished = await request(`/attempts/${inBook.attempt.id}/answer`, 'POST', { answer: 'A' });
+  assert.equal(finished.attempt.correct, true);
+  await request('/practice/select', 'POST', { collection: book });
+  const opts = await request('/practice/options');
+  assert.equal(opts.last.collection, book);
+  assert.equal(opts.last.progress, 1);
+  assert.equal(opts.collections.find(c => c.name === book).progress, 1);
+  const second = await startScope(book);
+  assert.notEqual(second.attempt.questionId, inBook.attempt.questionId);
+  await request('/collections', 'PUT', { name: book, newName: '改名後' });
+  assert.equal((await request(scopeUrl('改名後'))).attempt.id, second.attempt.id, '改名で進捗を保持');
+  assert.equal((await request('/practice/options')).last.collection, '改名後');
+  const beforeReset = await request('/stats');
+  await request('/questions', 'POST', { id: 'scope-added', text: 'Added', answer: 'A', collection: '改名後' });
+  assert.equal((await request(scopeUrl('改名後'))).round, 0);
+  assert.equal((await request('/practice')).round, 0, '全体練習も問題追加でリセット');
+  assert.equal((await request(scopeUrl('*'))).attempt.id, inOther.attempt.id, '別の問題集の進捗は保持');
+  assert.equal((await request('/stats')).answered, beforeReset.answered, 'リセット後も確定済み成績を保持');
+  const cancelled = await fetch(base + '/api/attempts/' + second.attempt.id + '/answer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer: 'A' }) });
+  assert.equal(cancelled.status, 409);
+  const restarted = await startScope('改名後');
+  assert.equal(restarted.seen, 1);
+  assert.equal(restarted.total, 3);
+  await request('/questions/scope-other', 'PUT', { ...fixtures[2], collection: '' });
+  assert.equal((await request(scopeUrl('*'))).round, 0, '所属の移動で元の問題集をリセット');
+  assert.equal((await request(scopeUrl(''))).round, 0, '所属の移動で移動先もリセット');
+  assert.equal((await startScope('')).total, 2);
+  const invalidScope = await fetch(base + '/api/practice/next', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection: 123 }) });
+  assert.equal(invalidScope.status, 400);
+  assert.equal((await startScope('存在しない問題集')).total, 0);
   console.log('PASS: D1実機互換テスト — 取り込み・更新・出題の同時操作・一巡・再開・判定・お気に入り・履歴・設定・書き出し');
 } catch (error) {
   console.error(logs);

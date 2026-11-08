@@ -48,3 +48,19 @@
 @media(max-width:600px) { .collection-create { flex-wrap:wrap; } .collection-create label { flex-basis:100%; } .collection-actions .button { min-height:44px; } }
 
 .nav-item,.mobile-nav a{text-decoration:none}.mobile-nav a{cursor:pointer}
+/* Practice scope selection */
+.practice-picker { padding: 30px; max-width: 760px; }
+.practice-picker h2 { margin: 8px 0 12px; }
+.practice-picker > p { color: var(--muted, #777); line-height: 1.7; }
+.practice-choice { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; padding: 20px; margin: 14px 0; border: 1px solid #e3e6e0; border-radius: 14px; background: #fff; color: inherit; text-align: left; text-decoration: none; cursor: pointer; }
+.practice-choice span { min-width: 0; overflow-wrap: anywhere; }
+.practice-choice strong { display: block; font-size: 16px; line-height: 1.6; }
+.practice-choice small { display: block; margin-top: 5px; color: #73796f; }
+.practice-choice > svg { flex-shrink: 0; }
+.practice-choice:hover { border-color: #899e78; background: #f7f9f4; }
+.resume-choice { background: #eff5e9; border-color: #cdddc0; }
+.practice-choice.unavailable { cursor: default; background: #f6f6f3; color: #82877e; }
+.practice-collections { padding-left: 14px; border-left: 3px solid #dce6d3; }
+.picker-note { font-size: 12px; margin-top: 24px; }
+.picker-back { display: inline-block; margin-bottom: 20px; }
+@media (max-width: 600px) { .practice-picker { padding: 20px 16px; } .practice-choice { padding: 18px 14px; } }

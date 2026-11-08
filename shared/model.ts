@@ -54,6 +54,7 @@ export interface PracticeAttempt {
   skipped?: boolean;
 }
 export interface PracticeState {
+  collection?: string | null;
   attempt: PracticeAttempt | null;
   round: number;
   total: number;

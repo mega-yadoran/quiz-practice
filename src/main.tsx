@@ -6,6 +6,7 @@ import { parseQuestionsCsv, questionsCsv, sampleQuestions } from '../shared/csv'
 import type { PracticeState, Question, QuestionRow, Settings, Stats } from '../shared/model';
 import { spokenText, type SpeechConfig } from '../shared/speech';
 import type { CollectionSummary } from '../shared/collections';
+import { practiceLabel, type PracticeOptions } from '../shared/practice';
 import { announceQuestion, isNewCorrectResult, playCorrectAnswer } from './speech';
 import { Link, useRoute, navigate as go, closeRoute, updateQuery, listPage, type Page } from './router';
 import './style.css';
@@ -68,7 +69,7 @@ function App() {
         <header className="page-heading"><div><p className="eyebrow">{current.en}</p><h1>{page === 'practice' ? '聴いて、考えて、覚える。' : current.label}</h1><p className="subtitle">{{ practice: '今日も、一問ずつ。自分のペースで知識を積み重ねよう。', questions: '集めた問題を、自分の知識に変えていこう。', favorites: 'もう一度見返したい問題を、ここに。', history: '小さな積み重ねを、振り返ろう。', settings: '心地よく練習するための、自分の設定。', 'not-found': 'メニューから目的の画面を開いてください。' }[page]}</p></div><span className="heading-decoration" aria-hidden="true">{page === 'practice' ? 'Q.' : <Icon name={current.icon} size={44} />}</span></header>
         {error && <ErrorBox error={error} retry={() => void load()} />}
         {page === 'not-found' && <Empty title="ページが見つかりません"><p>URLを確認するか、メニューから移動してください。</p><Link className="button primary" href="/practice">練習する</Link></Empty>}
-        {page === 'practice' && <Practice settings={settings} stats={stats} refresh={refresh} onQuestions={() => navigate('questions')} />}
+        {page === 'practice' && <PracticeEntry settings={settings} stats={stats} refresh={refresh} onQuestions={() => navigate('questions')} />}
         {(page === 'questions' || page === 'favorites') && <Library key={page} favoriteOnly={page === 'favorites'} refresh={refresh} />}
         {page === 'history' && <History stats={stats} />}
         {page === 'settings' && <Preferences settings={settings} onSave={s => { setSettings(s); refresh(); }} />}
@@ -79,7 +80,33 @@ function App() {
   </div>;
 }
 
-function Practice({ settings, stats, refresh, onQuestions }: { settings: Settings; stats: Stats | null; refresh: () => void; onQuestions: () => void }) {
+type PracticeProps = { settings: Settings; stats: Stats | null; refresh: () => void; onQuestions: () => void };
+function PracticeEntry(props: PracticeProps) {
+  const route = useRoute();
+  const playing = route.params.get('play') === '1';
+  const collection = route.params.get('collection');
+  const [options, setOptions] = useState<PracticeOptions | null>(null);
+  const [choosing, setChoosing] = useState(false);
+  const [error, setError] = useState('');
+  const load = () => { setError(''); void api<PracticeOptions>('/practice/options').then(setOptions).catch(e => setError((e as Error).message)); };
+  useEffect(() => { if (!playing) { setOptions(null); setChoosing(false); load(); } }, [playing]);
+  const href = (name: string | null) => '/practice?play=1' + (name === null ? '' : '&collection=' + encodeURIComponent(name));
+  if (playing) return <Practice key={collection === null ? 'all' : 'collection:' + collection} {...props} collection={collection} />;
+  return <section className="card practice-picker" aria-label="出題する問題集">
+    <p className="eyebrow">LET’S PRACTICE</p><h2>今日はどの問題集にする？</h2>
+    <p>問題集ごとに進み具合を保存。いつでも続きから練習できます。</p>
+    {error && <ErrorBox error={error} retry={load} />}
+    {!options ? !error && <Loading /> : <>
+      {options.last ? <Link className="practice-choice resume-choice" href={href(options.last.collection)}><span><strong>前回（{practiceLabel(options.last.collection)}）の続きから</strong><small>{options.last.progress} / {options.last.total} 問 解答済み</small></span><Icon name="arrow" /></Link> : <div className="practice-choice unavailable"><span><strong>前回の続きから</strong><small>まだ続きの練習はありません</small></span></div>}
+      <Link className="practice-choice" href={href(null)}><span><strong>全ての問題集から出題</strong><small>全 {options.total} 問</small></span><Icon name="arrow" /></Link>
+      <button className="practice-choice" aria-expanded={choosing} onClick={() => setChoosing(v => !v)}><span><strong>出題する問題集を選ぶ</strong><small>問題集ごとの続きから始められます</small></span><Icon name="book" /></button>
+      {choosing && <div className="practice-collections">{options.collections.map(c => c.total ? <Link key={c.name} className="practice-choice" href={href(c.name)}><span><strong>{practiceLabel(c.name)}</strong><small>{c.progress} / {c.total} 問 解答済み</small></span><Icon name="arrow" /></Link> : <div key={c.name} className="practice-choice unavailable"><span><strong>{practiceLabel(c.name)}</strong><small>問題がありません</small></span></div>)}</div>}
+      {!options.total && <button className="button primary" onClick={props.onQuestions}>問題を登録する</button>}
+      <p className="picker-note">問題の追加・削除や所属の変更で、対象の練習は最初からになります。回答済みの履歴・成績は残ります。</p>
+    </>}
+  </section>;
+}
+function Practice({ settings, stats, refresh, onQuestions, collection }: PracticeProps & { collection: string | null }) {
   const [state, setState] = useState<PracticeState | null>(null);
   const [stage, setStage] = useState<'ready' | 'reading' | 'answering'>('ready');
   const [answer, setAnswer] = useState('');
@@ -115,8 +142,8 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
   const load = async () => {
     setError('');
     try {
-      let data = await api<PracticeState>('/practice');
-      if (!data.attempt && data.total) data = await api<PracticeState>('/practice/next', { method: 'POST', body: {} });
+      let data = await api<PracticeState>('/practice/select', { method: 'POST', body: { collection } });
+      if (!data.attempt && data.total) data = await api<PracticeState>('/practice/next', { method: 'POST', body: { collection } });
       update(data);
     } catch (e) { setError((e as Error).message); }
   };
@@ -226,7 +253,7 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
   };
   const next = (newRound: boolean) => {
     unlockAudio();
-    void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound } })); refresh(); });
+    void run(async () => { update(await api('/practice/next', { method: 'POST', body: { newRound, collection } })); refresh(); });
   };
   const stop = () => {
     autoPlay.current = false;
@@ -252,7 +279,8 @@ function Practice({ settings, stats, refresh, onQuestions }: { settings: Setting
     <div className="stats-grid"><Stat label="登録している問題" value={stats?.total} unit="問" icon="book" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /><Stat label="これまでの正解率" value={stats ? stats.answered ? Math.round(stats.correct / stats.answered * 100) : 0 : undefined} unit="%" icon="check" /></div>
     <div className="practice-layout">
       <section className="card practice-card" aria-label="クイズの練習">
-        <div className="card-top"><span className="section-label"><span className="status-dot" />全問題から出題</span><span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span></div>
+        <Link className="text-button picker-back" href="/practice">← 問題集を選び直す</Link>
+        <div className="card-top"><span className="section-label"><span className="status-dot" />{practiceLabel(collection)}から出題</span><span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span></div>
         {error && <ErrorBox error={error} retry={() => void load()} />}
         {!state ? !error && <Loading /> : !state.total ? <Empty title="最初の問題を登録しよう"><p>CSVの取り込みや手入力で、<br />あなただけの問題集を作れます。</p><button className="button primary" onClick={onQuestions}><Icon name="plus" />問題を登録する</button></Empty> : !a ? <Empty title="一巡おつかれさまでした"><button className="button primary" disabled={busy} onClick={() => next(true)}>次の一巡を始める</button></Empty> : <>
           <div className="question-meta"><span>QUESTION {String(state.seen).padStart(2, '0')}</span><span>{[a.collection, a.majorCategory, a.minorCategory].filter(Boolean).join(' / ') || a.category || 'クイズ'}</span></div>
