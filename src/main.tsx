@@ -290,13 +290,14 @@ function Practice({ settings, stats, refresh, onQuestions, collection, favoriteO
             <p className="revealed-question">{a.text}</p><div className="answer-reveal"><span className="eyebrow">ANSWER</span><h2>{a.answer}</h2>{!!a.aliases?.length && <p>別解：{a.aliases.join(' ／ ')}</p>}</div>
             {!a.skipped && <p className="your-answer">あなたの答え：<strong>{a.submittedAnswer}</strong></p>}
             {a.note && <p className="question-note">{a.note}</p>}{a.source && <p className="source">出典・メモ：{a.source}</p>}
-            <div className="result-actions"><button className={`button secondary ${a.favorite ? 'is-favorite' : ''}`} disabled={busy} onClick={() => void run(async () => { await api(`/favorites/${a.questionId}`, { method: 'PUT', body: { favorite: !a.favorite } }); setState({ ...state, attempt: { ...a, favorite: !a.favorite } }); refresh(); })}><Icon name="star" fill={a.favorite} />{a.favorite ? 'お気に入り済み' : 'お気に入りに追加'}</button>{!a.correct && !a.skipped && <button className="text-button" disabled={busy} onClick={() => void run(async () => { unlockAudio(); receiveResult(await api(`/attempts/${a.id}/override`, { method: 'POST', body: {} })); refresh(); })}>正解扱いに変更</button>}</div>
-            <div className="visibility-actions">{a.hidden ? <p role="status"><span className="hidden-badge">非表示</span> 練習では出題されません。問題を管理から再表示できます。</p> : <button className="button secondary" disabled={busy} onClick={() => void run(async () => { await api('/questions/' + encodeURIComponent(a.questionId) + '/visibility', { method: 'PUT', body: { hidden: true } }); const query = new URLSearchParams(); if (collection !== null) query.set('collection', collection); if (favoriteOnly) query.set('favorite', '1'); const latest = await api<PracticeState>('/practice' + (query.size ? '?' + query : '')); setState({ ...latest, attempt: { ...a, hidden: true } }); refresh(); })}>この問題を再表示しない</button>}</div>
             {state.completed && state.total > 0 && <div className="round-complete"><strong>すべての問題を一巡しました。</strong></div>}
-            <button className="button primary wide" disabled={busy} onClick={() => next(state.completed)}>{busy ? '準備しています…' : !state.total ? '出題できる問題を確認する' : state.completed ? '次の一巡を始める' : '次の問題へ'}<Icon name="arrow" /></button>
+            <div className="result-actions">
+              {!a.correct && !a.skipped && <button className="text-button" disabled={busy} onClick={() => void run(async () => { unlockAudio(); receiveResult(await api(`/attempts/${a.id}/override`, { method: 'POST', body: {} })); refresh(); })}>正解扱いに変更</button>}
+              <button className="button primary wide" disabled={busy} onClick={() => next(state.completed)}>{busy ? '準備しています…' : !state.total ? '出題できる問題を確認する' : state.completed ? '次の一巡を始める' : '次の問題へ'}<Icon name="arrow" /></button>
+              <div className="visibility-actions">{a.hidden ? <p role="status"><span className="hidden-badge">非表示</span> 練習では出題されません。問題を管理から再表示できます。</p> : <button className="button secondary" disabled={busy} onClick={() => void run(async () => { await api('/questions/' + encodeURIComponent(a.questionId) + '/visibility', { method: 'PUT', body: { hidden: true } }); const query = new URLSearchParams(); if (collection !== null) query.set('collection', collection); if (favoriteOnly) query.set('favorite', '1'); const latest = await api<PracticeState>('/practice' + (query.size ? '?' + query : '')); setState({ ...latest, attempt: { ...a, hidden: true } }); refresh(); })}>この問題を再表示しない</button>}</div>
+              <button className={`button secondary ${a.favorite ? 'is-favorite' : ''}`} disabled={busy} onClick={() => void run(async () => { await api(`/favorites/${a.questionId}`, { method: 'PUT', body: { favorite: !a.favorite } }); setState({ ...state, attempt: { ...a, favorite: !a.favorite } }); refresh(); })}><Icon name="star" fill={a.favorite} />{a.favorite ? 'お気に入り済み' : 'お気に入りに追加'}</button>
+            </div>
           </div> : <>
-            {stage === 'reading' && <div className="buzzer-area"><button className="buzzer-button" onClick={stop} aria-label="解答する：読み上げを停止"><span className="buzzer-cap" aria-hidden="true" /></button></div>}
-
             {(settings.showQuestion || showText || speechError === 'text') && <p className="visible-question practice-question">{a.text}</p>}
             {!settings.showQuestion && !showText && speechError !== 'text' && <button className="button secondary question-text-toggle" onClick={() => setShowText(true)}>問題文を表示する</button>}
             {speechError && speechError !== 'text' && <p className="notice" role="status">{speechError}</p>}
@@ -309,11 +310,11 @@ function Practice({ settings, stats, refresh, onQuestions, collection, favoriteO
             {a.retryRequested && <p className="notice" role="status">もう一回</p>}
             {stage === 'answering' && <form className="answer-form" onSubmit={e => { e.preventDefault(); void submit(); }}><label htmlFor="answer">あなたの答え</label><div className="answer-input-row"><input ref={input} id="answer" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="答えを入力" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={500} enterKeyHint="done" disabled={busy} /><button className="button primary" type="submit" disabled={busy || !answer.trim()}>判定する<Icon name="arrow" size={18} /></button></div><div className="answer-options"><button className="button secondary" type="button" disabled={busy || preparing} onClick={start}><Icon name="volume" size={20} />もう一度聴く</button><button className="button secondary" type="button" disabled={busy} onClick={() => void submit(true)}>わからない・正解を見る</button></div></form>}
           </>}
-          <div className="question-meta"><span>QUESTION {a.hidden ? '—' : String(state.seen).padStart(2, '0')}</span><span>{[a.collection, a.majorCategory, a.minorCategory].filter(Boolean).join(' / ') || a.category || 'クイズ'}</span></div>
+          <div className="question-meta"><span>QUESTION {a.hidden ? '—' : String(state.seen).padStart(2, '0')}</span><span>{[answered ? practiceLabel(a.collection) : '', [a.majorCategory, a.minorCategory].filter(Boolean).join(' / ') || a.category].filter(Boolean).join(' / ')}</span></div>
           <div className="round-progress"><div><span>今回の進み具合</span><strong>{progress}<span> / {state.total} 問</span></strong></div><progress value={progress} max={state.total || 1} aria-label="今回の進み具合" /></div>
         </>}
         <div className="practice-footer">
-          <div className="card-top"><span className="section-label"><span className="status-dot" />{favoriteOnly ? 'お気に入り（' + practiceLabel(collection) + '）' : practiceLabel(collection)}から出題</span><span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span></div>
+          <span className="pill">{state?.round ? `${state.round}巡目` : '準備中'}</span>
           <Link className="text-button picker-back" href={favoriteOnly ? "/favorites" : "/practice"}>← {favoriteOnly ? "お気に入りへ戻る" : "問題集を選び直す"}</Link>
         </div>
         {error && <ErrorBox error={error} retry={() => void load()} />}
@@ -321,6 +322,7 @@ function Practice({ settings, stats, refresh, onQuestions, collection, favoriteO
 
     </div>
     <div className="stats-grid practice-stats"><Stat label="登録している問題" value={stats?.total} unit="問" icon="book" /><Stat label="今日の解答" value={stats?.today} unit="問" icon="headphones" /><Stat label="これまでの正解率" value={stats ? stats.answered ? Math.round(stats.correct / stats.answered * 100) : 0 : undefined} unit="%" icon="check" /></div>
+    {!answered && stage === 'reading' && <div className="buzzer-area"><button className="buzzer-button" onClick={stop} aria-label="解答する：読み上げを停止"><span className="buzzer-cap" aria-hidden="true" /></button></div>}
   </div>;
 }
 function Stat({ label, value, unit, icon }: { label: string; value?: number; unit: string; icon: string }) {

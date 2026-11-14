@@ -79,23 +79,24 @@
 .practice-session { width: 100%; max-width: 640px; margin: 0 auto; }
 .practice-picker { max-width: 720px; margin: 0 auto; }
 .practice-session .practice-layout { display: block; }
-.practice-session .buzzer-area { padding: 32px 24px 12px; }
+.practice-session .buzzer-area { padding: 24px 24px 20px; }
 .practice-session .question-text-toggle { margin: 12px auto 24px; }
+.practice-session .result-actions { display: grid; gap: 10px; margin: 16px 0 0; }
+.practice-session .result-actions > .text-button { justify-self: start; min-height: 44px; margin: 0; }
+.practice-session .visibility-actions { margin: 0; }
 .practice-session .answer-form { padding-top: 6px; }
 .practice-session .question-meta { padding: 16px 28px 0; gap: 12px; flex-wrap: wrap; }
 .practice-session .question-meta > span { overflow-wrap: anywhere; }
 .practice-session .round-progress { margin: 16px 28px 24px; padding-top: 16px; }
 .practice-footer { padding: 16px 28px 12px; border-top: 1px solid #edf0e9; background: #fafbf7; }
-.practice-footer .card-top { padding: 0; border: 0; gap: 12px; }
-.practice-footer .section-label { min-width: 0; overflow-wrap: anywhere; }
-.practice-footer .pill { flex-shrink: 0; }
+.practice-footer .pill { display: table; }
 .practice-footer .picker-back { display: inline-flex; align-items: center; min-height: 44px; margin: 4px 0 0; padding: 8px 0; text-decoration: none; }
 .practice-stats { margin: 20px 0 0; gap: 12px; }
 .practice-stats .stat-card { min-width: 0; padding: 16px; }
 .practice-stats .stat-icon { width: 32px; height: 32px; border-radius: 9px; }
 .practice-stats .stat-card strong { font-size: 28px; }
 @media (max-width: 700px) {
-  .practice-session .buzzer-area { padding: 24px 16px 8px; }
+  .practice-session .buzzer-area { padding: 20px 16px 16px; }
   .practice-session .question-meta { padding: 14px 21px 0; }
   .practice-session .round-progress { margin: 14px 21px 20px; padding-top: 14px; }
   .practice-footer { padding: 16px 21px 8px; }
